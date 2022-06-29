@@ -39,14 +39,16 @@ func (f *Fetcher) getServices(clusterID string, apps map[string]*App) (map[strin
 	svcs := make(map[string]*Service)
 	traefikNames := make(map[string]string)
 	for _, service := range services {
-		var (
-			externalIPs   []string
-			externalPorts []int
-		)
+		var externalPorts []int
+
 		// for BC reason we keep externalPorts.
 		for _, port := range service.Spec.Ports {
 			externalPorts = append(externalPorts, int(port.Port))
 		}
+
+		sort.Ints(externalPorts)
+
+		var externalIPs []string
 		if service.Spec.Type == corev1.ServiceTypeLoadBalancer {
 			for _, ingress := range service.Status.LoadBalancer.Ingress {
 				hostname := ingress.Hostname
@@ -56,6 +58,8 @@ func (f *Fetcher) getServices(clusterID string, apps map[string]*App) (map[strin
 				externalIPs = append(externalIPs, hostname)
 			}
 		}
+
+		sort.Strings(externalIPs)
 
 		svcName := objectKey(service.Name, service.Namespace)
 		svcs[svcName] = &Service{
