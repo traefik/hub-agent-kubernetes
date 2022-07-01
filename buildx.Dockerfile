@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.2
 # Go mod
-FROM --platform=$BUILDPLATFORM golang:1.16-alpine as gomod
+FROM --platform=$BUILDPLATFORM golang:1.17-alpine as gomod
 
 WORKDIR /go/src/github.com/traefik/hub-agent-kubernetes
 
@@ -10,7 +10,7 @@ COPY go.sum .
 RUN go mod download
 
 # Go build
-FROM --platform=$BUILDPLATFORM golang:1.16-alpine as gobuild
+FROM --platform=$BUILDPLATFORM golang:1.17-alpine as gobuild
 
 WORKDIR /go/src/github.com/traefik/hub-agent-kubernetes
 
