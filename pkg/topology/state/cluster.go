@@ -24,9 +24,9 @@ import (
 
 // Cluster describes a Cluster.
 type Cluster struct {
-	Overview  Overview
-	Services  map[string]*Service
-	Ingresses map[string]*Ingress
+	Overview  Overview            `json:"overview"`
+	Services  map[string]*Service `json:"services"`
+	Ingresses map[string]*Ingress `json:"-"`
 }
 
 // Overview represents an overview of the cluster resources.
@@ -39,7 +39,6 @@ type Service struct {
 	Name          string             `json:"name"`
 	Namespace     string             `json:"namespace"`
 	Type          corev1.ServiceType `json:"type"`
-	Selector      map[string]string  `json:"selector"`
 	Annotations   map[string]string  `json:"annotations,omitempty"`
 	ExternalIPs   []string           `json:"externalIPs,omitempty"`
 	ExternalPorts []int              `json:"externalPorts,omitempty"`

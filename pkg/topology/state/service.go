@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -64,7 +65,6 @@ func (f *Fetcher) getServices() (map[string]*Service, error) {
 			Name:          service.Name,
 			Namespace:     service.Namespace,
 			Annotations:   sanitizeAnnotations(service.Annotations),
-			Selector:      service.Spec.Selector,
 			Type:          service.Spec.Type,
 			ExternalIPs:   externalIPs,
 			ExternalPorts: externalPorts,

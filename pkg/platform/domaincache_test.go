@@ -56,7 +56,7 @@ func TestDomainCache_WarmUp(t *testing.T) {
 
 	client, err := NewClient(srv.URL, testToken)
 	require.NoError(t, err)
-	client.httpClient = srv.Client()
+	client.retryableHTTPClient = srv.Client()
 
 	ttl := time.Millisecond
 	domainCache := NewDomainCache(client, ttl)
@@ -95,7 +95,7 @@ func TestDomainCache_WarmUp_unableToSetup(t *testing.T) {
 
 	client, err := NewClient(srv.URL, testToken)
 	require.NoError(t, err)
-	client.httpClient = srv.Client()
+	client.retryableHTTPClient = srv.Client()
 
 	ttl := time.Millisecond
 	domainCache := NewDomainCache(client, ttl)
@@ -128,7 +128,7 @@ func TestDomainCache_Run(t *testing.T) {
 
 	client, err := NewClient(srv.URL, testToken)
 	require.NoError(t, err)
-	client.httpClient = srv.Client()
+	client.retryableHTTPClient = srv.Client()
 
 	ttl := 5 * time.Millisecond
 	domainCache := NewDomainCache(client, ttl)

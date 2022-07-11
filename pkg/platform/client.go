@@ -29,17 +29,20 @@ import (
 	"path"
 	"time"
 
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rs/zerolog/log"
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp"
 	hubv1alpha1 "github.com/traefik/hub-agent-kubernetes/pkg/crd/api/hub/v1alpha1"
 	"github.com/traefik/hub-agent-kubernetes/pkg/edgeingress"
 	"github.com/traefik/hub-agent-kubernetes/pkg/logger"
+	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
 )
 
 // APIError represents an error returned by the API.
 type APIError struct {
 	StatusCode int
+	Retryable  bool
 	Message    string `json:"error"`
 }
 
@@ -49,9 +52,10 @@ func (a APIError) Error() string {
 
 // Client allows interacting with the cluster service.
 type Client struct {
-	baseURL    *url.URL
-	token      string
-	httpClient *http.Client
+	baseURL             *url.URL
+	token               string
+	retryableHTTPClient *http.Client
+	httpClient          *http.Client
 }
 
 // NewClient creates a new client for the cluster service.
@@ -61,14 +65,19 @@ func NewClient(baseURL, token string) (*Client, error) {
 		return nil, fmt.Errorf("parse client url: %w", err)
 	}
 
-	rc := retryablehttp.NewClient()
-	rc.RetryMax = 4
-	rc.Logger = logger.NewWrappedLogger(log.Logger.With().Str("component", "platform_client").Logger())
+	client := cleanhttp.DefaultPooledClient()
+	client.Timeout = 10 * time.Second
+
+	retryableClient := retryablehttp.NewClient()
+	retryableClient.HTTPClient = client
+	retryableClient.RetryMax = 4
+	retryableClient.Logger = logger.NewWrappedLogger(log.Logger.With().Str("component", "platform_client").Logger())
 
 	return &Client{
-		baseURL:    u,
-		token:      token,
-		httpClient: rc.StandardClient(),
+		baseURL:             u,
+		token:               token,
+		retryableHTTPClient: retryableClient.StandardClient(),
+		httpClient:          client,
 	}, nil
 }
 
@@ -100,7 +109,7 @@ func (c *Client) Link(ctx context.Context, kubeID string) (string, error) {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -129,15 +138,7 @@ func (c *Client) Link(ctx context.Context, kubeID string) (string, error) {
 
 // Config holds the configuration of the offer.
 type Config struct {
-	Topology TopologyConfig `json:"topology"`
-	Metrics  MetricsConfig  `json:"metrics"`
-}
-
-// TopologyConfig holds the topology part of the offer config.
-type TopologyConfig struct {
-	GitProxyHost string `json:"gitProxyHost,omitempty"`
-	GitOrgName   string `json:"gitOrgName,omitempty"`
-	GitRepoName  string `json:"gitRepoName,omitempty"`
+	Metrics MetricsConfig `json:"metrics"`
 }
 
 // MetricsConfig holds the metrics part of the offer config.
@@ -160,7 +161,7 @@ func (c *Client) GetConfig(ctx context.Context) (Config, error) {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return Config{}, err
 	}
@@ -199,7 +200,7 @@ func (c *Client) GetACPs(ctx context.Context) ([]acp.ACP, error) {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +239,7 @@ func (c *Client) Ping(ctx context.Context) error {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -264,7 +265,7 @@ func (c *Client) ListVerifiedDomains(ctx context.Context) ([]string, error) {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -330,7 +331,7 @@ func (c *Client) CreateEdgeIngress(ctx context.Context, createReq *CreateEdgeIng
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -385,7 +386,7 @@ func (c *Client) UpdateEdgeIngress(ctx context.Context, namespace, name, lastKno
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Last-Known-Version", lastKnownVersion)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -430,7 +431,7 @@ func (c *Client) DeleteEdgeIngress(ctx context.Context, namespace, name, lastKno
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Last-Known-Version", lastKnownVersion)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -476,7 +477,7 @@ func (c *Client) CreateACP(ctx context.Context, policy *hubv1alpha1.AccessContro
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -528,7 +529,7 @@ func (c *Client) UpdateACP(ctx context.Context, oldVersion string, policy *hubv1
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Last-Known-Version", oldVersion)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -571,7 +572,7 @@ func (c *Client) DeleteACP(ctx context.Context, oldVersion, name string) error {
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Last-Known-Version", oldVersion)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request %q: %w", baseURL.String(), err)
 	}
@@ -608,7 +609,7 @@ func (c *Client) GetEdgeIngresses(ctx context.Context) ([]edgeingress.EdgeIngres
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +648,7 @@ func (c *Client) GetCertificate(ctx context.Context) (edgeingress.Certificate, e
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
 		return edgeingress.Certificate{}, err
 	}
@@ -670,4 +671,101 @@ func (c *Client) GetCertificate(ctx context.Context) (edgeingress.Certificate, e
 	}
 
 	return cert, nil
+}
+
+type fetchResp struct {
+	Version  string        `json:"version"`
+	Topology state.Cluster `json:"topology"`
+}
+
+// FetchTopology fetches the topology.
+func (c *Client) FetchTopology(ctx context.Context) (topology state.Cluster, version string, err error) {
+	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "topology"))
+	if err != nil {
+		return state.Cluster{}, "", fmt.Errorf("parse endpoint: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL.String(), http.NoBody)
+	if err != nil {
+		return state.Cluster{}, "", fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.retryableHTTPClient.Do(req)
+	if err != nil {
+		return state.Cluster{}, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		all, _ := io.ReadAll(resp.Body)
+
+		apiErr := APIError{StatusCode: resp.StatusCode}
+		if err = json.Unmarshal(all, &apiErr); err != nil {
+			apiErr.Message = string(all)
+		}
+
+		return state.Cluster{}, "", apiErr
+	}
+
+	var body fetchResp
+	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return state.Cluster{}, "", fmt.Errorf("decode topology: %w", err)
+	}
+
+	return body.Topology, body.Version, nil
+}
+
+type patchResp struct {
+	Version string `json:"version"`
+}
+
+// PatchTopology submits a JSON Merge Patch to the platform containing the difference in the topology since
+// its last synchronization. The last known topology version must be provided. This version can be obtained
+// by calling the FetchTopology method.
+func (c *Client) PatchTopology(ctx context.Context, patch []byte, lastKnownVersion string) (string, error) {
+	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "topology"))
+	if err != nil {
+		return "", fmt.Errorf("parse endpoint: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, baseURL.String(), bytes.NewReader(patch))
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/merge-patch+json")
+	req.Header.Set("Last-Known-Version", lastKnownVersion)
+
+	// This operation cannot be retried without calling FetchTopology in between.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		all, _ := io.ReadAll(resp.Body)
+
+		retryable := true
+		if resp.StatusCode == http.StatusUnprocessableEntity || resp.StatusCode == http.StatusBadRequest {
+			retryable = false
+		}
+
+		apiErr := APIError{StatusCode: resp.StatusCode, Retryable: retryable}
+		if err = json.Unmarshal(all, &apiErr); err != nil {
+			apiErr.Message = string(all)
+		}
+
+		return "", apiErr
+	}
+
+	var body patchResp
+	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("decode topology: %w", err)
+	}
+
+	return body.Version, nil
 }

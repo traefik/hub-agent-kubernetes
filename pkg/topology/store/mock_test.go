@@ -15,21 +15,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-package main
+package store
 
-import (
-	"context"
-
-	"github.com/traefik/hub-agent-kubernetes/pkg/topology"
-	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
-	"github.com/traefik/hub-agent-kubernetes/pkg/topology/store"
-)
-
-func newTopologyWatcher(ctx context.Context, fetcher *state.Fetcher) (*topology.Watcher, error) {
-	s := store.New(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return topology.NewWatcher(fetcher, s), nil
-}
+// mocktail:PlatformClient

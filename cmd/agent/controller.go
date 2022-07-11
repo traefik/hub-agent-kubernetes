@@ -29,7 +29,9 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/kube"
 	"github.com/traefik/hub-agent-kubernetes/pkg/logger"
 	"github.com/traefik/hub-agent-kubernetes/pkg/platform"
+	"github.com/traefik/hub-agent-kubernetes/pkg/topology"
 	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
+	"github.com/traefik/hub-agent-kubernetes/pkg/topology/store"
 	"github.com/traefik/hub-agent-kubernetes/pkg/version"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
@@ -126,10 +128,7 @@ func (c controllerCmd) run(cliCtx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	topoWatch, err := newTopologyWatcher(cliCtx.Context, topoFetcher, storeCfg)
-	if err != nil {
-		return err
-	}
+	topoWatch := topology.NewWatcher(topoFetcher, store.New(platformClient))
 
 	group, ctx := errgroup.WithContext(cliCtx.Context)
 

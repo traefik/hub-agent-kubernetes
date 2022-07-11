@@ -38,9 +38,6 @@ func TestFetcher_GetServices(t *testing.T) {
 			Annotations: map[string]string{
 				"my.annotation": "foo",
 			},
-			Selector: map[string]string{
-				"my.label": "foo",
-			},
 			Type:          corev1.ServiceTypeClusterIP,
 			ExternalPorts: []int{443},
 		},
@@ -104,9 +101,6 @@ func TestFetcher_GetServicesWithExternalIPs(t *testing.T) {
 			Namespace: "myns",
 			Annotations: map[string]string{
 				"my.annotation": "foo",
-			},
-			Selector: map[string]string{
-				"my.label": "foo",
 			},
 			Type: corev1.ServiceTypeLoadBalancer,
 			ExternalIPs: []string{

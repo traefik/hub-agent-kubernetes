@@ -34,6 +34,7 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/jwt"
 	hubv1alpha1 "github.com/traefik/hub-agent-kubernetes/pkg/crd/api/hub/v1alpha1"
 	"github.com/traefik/hub-agent-kubernetes/pkg/edgeingress"
+	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -102,7 +103,7 @@ func TestClient_Link(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			hubClusterID, err := c.Link(context.Background(), "1")
 			test.wantErr(t, err)
@@ -125,11 +126,6 @@ func TestClient_GetConfig(t *testing.T) {
 			desc:             "get config succeeds",
 			returnStatusCode: http.StatusOK,
 			wantConfig: Config{
-				Topology: TopologyConfig{
-					GitProxyHost: "git-proxy-host",
-					GitOrgName:   "git-org-name",
-					GitRepoName:  "git-repo-name",
-				},
 				Metrics: MetricsConfig{
 					Interval: time.Minute,
 					Tables:   []string{"1m", "10m"},
@@ -176,7 +172,7 @@ func TestClient_GetConfig(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			agentCfg, err := c.GetConfig(context.Background())
 			test.wantErr(t, err)
@@ -241,7 +237,7 @@ func TestClient_Ping(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			err = c.Ping(context.Background())
 			test.wantErr(t, err)
@@ -305,7 +301,7 @@ func TestClient_ListVerifiedDomains(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			domains, err := c.ListVerifiedDomains(context.Background())
 			test.wantErr(t, err)
@@ -408,7 +404,7 @@ func TestClient_CreateEdgeIngress(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			createdEdgeIngress, err := c.CreateEdgeIngress(context.Background(), test.createReq)
 			test.wantErr(t, err)
@@ -529,7 +525,7 @@ func TestClient_UpdateEdgeIngress(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			updatedEdgeIngress, err := c.UpdateEdgeIngress(context.Background(), test.namespace, test.name, test.version, test.updateReq)
 			test.wantErr(t, err)
@@ -603,7 +599,7 @@ func TestClient_DeleteEdgeIngress(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			err = c.DeleteEdgeIngress(context.Background(), test.namespace, test.name, test.version)
 			test.wantErr(t, err)
@@ -709,7 +705,7 @@ func TestClient_CreateACP(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			createdACP, err := c.CreateACP(context.Background(), test.policy)
 			test.wantErr(t, err)
@@ -820,7 +816,7 @@ func TestClient_UpdateACP(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			updatedACP, err := c.UpdateACP(context.Background(), "oldVersion", test.policy)
 			test.wantErr(t, err)
@@ -888,7 +884,7 @@ func TestClient_DeleteACP(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			err = c.DeleteACP(context.Background(), "oldVersion", test.name)
 			test.wantErr(t, err)
@@ -941,7 +937,7 @@ func TestClient_GetEdgeIngress(t *testing.T) {
 
 	c, err := NewClient(srv.URL, testToken)
 	require.NoError(t, err)
-	c.httpClient = srv.Client()
+	c.retryableHTTPClient = srv.Client()
 
 	gotEdgeIngresses, err := c.GetEdgeIngresses(context.Background())
 	require.NoError(t, err)
@@ -956,7 +952,7 @@ func assertErrorIs(wantErr error) assert.ErrorAssertionFunc {
 	}
 }
 
-func Test_GetCertificate(t *testing.T) {
+func TestClient_GetCertificate(t *testing.T) {
 	tests := []struct {
 		desc       string
 		statusCode int
@@ -1021,7 +1017,7 @@ func Test_GetCertificate(t *testing.T) {
 
 			c, err := NewClient(srv.URL, "123")
 			require.NoError(t, err)
-			c.httpClient = srv.Client()
+			c.retryableHTTPClient = srv.Client()
 
 			gotCert, err := c.GetCertificate(context.Background())
 			if test.wantErr != nil {
@@ -1032,6 +1028,244 @@ func Test_GetCertificate(t *testing.T) {
 
 			assert.Equal(t, 1, callCount)
 			assert.Equal(t, test.wantCert, gotCert)
+		})
+	}
+}
+
+func TestClient_FetchTopology(t *testing.T) {
+	tests := []struct {
+		desc         string
+		statusCode   int
+		resp         []byte
+		wantVersion  string
+		wantTopology state.Cluster
+		wantErr      error
+	}{
+		{
+			desc:       "fetch topology succeed",
+			statusCode: http.StatusOK,
+			resp: []byte(`{
+				"version": "version-1",
+				"topology": {
+					"overview": {
+						"serviceCount": 1
+					},
+					"services": {
+						"service-1@ns": {
+							"name": "service-1",
+							"namespace": "ns",
+							"type": "ClusterIP",
+							"annotations": {"key": "value"},
+							"externalIps": ["10.10.10.10"],
+							"externalPorts": [8080, 8081]
+						}
+					}
+				}
+			}`),
+			wantVersion: "version-1",
+			wantTopology: state.Cluster{
+				Overview: state.Overview{
+					ServiceCount: 1,
+				},
+				Services: map[string]*state.Service{
+					"service-1@ns": {
+						Name:          "service-1",
+						Namespace:     "ns",
+						Type:          "ClusterIP",
+						Annotations:   map[string]string{"key": "value"},
+						ExternalIPs:   []string{"10.10.10.10"},
+						ExternalPorts: []int{8080, 8081},
+					},
+				},
+			},
+		},
+		{
+			desc:       "fetch topology unexpected error",
+			statusCode: http.StatusTeapot,
+			wantErr: &APIError{
+				StatusCode: http.StatusTeapot,
+				Message:    "error",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			var callCount int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/topology", func(rw http.ResponseWriter, req *http.Request) {
+				callCount++
+
+				if req.Method != http.MethodGet {
+					http.Error(rw, fmt.Sprintf("unsupported method: %s", req.Method), http.StatusMethodNotAllowed)
+					return
+				}
+
+				if req.Header.Get("Authorization") != "Bearer 123" {
+					http.Error(rw, "Invalid token", http.StatusUnauthorized)
+					return
+				}
+
+				rw.WriteHeader(test.statusCode)
+
+				switch test.statusCode {
+				case http.StatusOK:
+					_, _ = rw.Write(test.resp)
+				default:
+					_ = json.NewEncoder(rw).Encode(APIError{Message: "error"})
+				}
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			c, err := NewClient(srv.URL, "123")
+			require.NoError(t, err)
+			c.retryableHTTPClient = srv.Client()
+
+			gotTopology, gotVersion, err := c.FetchTopology(context.Background())
+			if test.wantErr != nil {
+				require.ErrorAs(t, err, test.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, 1, callCount)
+			assert.Equal(t, test.wantVersion, gotVersion)
+			assert.Equal(t, test.wantTopology, gotTopology)
+		})
+	}
+}
+
+func TestClient_PatchTopology(t *testing.T) {
+	tests := []struct {
+		desc             string
+		statusCode       int
+		patch            []byte
+		lastKnownVersion string
+		resp             []byte
+		wantVersion      string
+		wantErr          error
+	}{
+		{
+			desc:       "patch topology succeed",
+			statusCode: http.StatusOK,
+			patch: []byte(`{
+				"services": {
+					"service-1@ns": null,
+					"service-2@ns": {
+						"externalPorts": [8080]
+					}
+				}
+			}`),
+			lastKnownVersion: "version-1",
+			resp:             []byte(`{"version": "version-2"}`),
+			wantVersion:      "version-2",
+		},
+		{
+			desc:             "patch conflict",
+			statusCode:       http.StatusConflict,
+			patch:            []byte(`{"services": {"service-1@ns": null}}`),
+			lastKnownVersion: "version-1",
+			wantErr: &APIError{
+				StatusCode: http.StatusConflict,
+				Retryable:  true,
+				Message:    "error",
+			},
+		},
+		{
+			desc:             "patch bad request",
+			statusCode:       http.StatusBadRequest,
+			lastKnownVersion: "version-1",
+			wantErr: &APIError{
+				StatusCode: http.StatusBadRequest,
+				Retryable:  false,
+				Message:    "error",
+			},
+		},
+		{
+			desc:             "patch unprocessable entity",
+			statusCode:       http.StatusUnprocessableEntity,
+			patch:            []byte(`{"services": {"service-1@ns": abcd}}`),
+			lastKnownVersion: "version-1",
+			wantErr: &APIError{
+				StatusCode: http.StatusUnprocessableEntity,
+				Retryable:  false,
+				Message:    "error",
+			},
+		},
+		{
+			desc:       "patch topology unexpected error",
+			statusCode: http.StatusInternalServerError,
+			wantErr: &APIError{
+				StatusCode: http.StatusInternalServerError,
+				Retryable:  true,
+				Message:    "error",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			var callCount int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/topology", func(rw http.ResponseWriter, req *http.Request) {
+				callCount++
+
+				if req.Method != http.MethodPatch {
+					http.Error(rw, fmt.Sprintf("unsupported method: %s", req.Method), http.StatusMethodNotAllowed)
+					return
+				}
+
+				if req.Header.Get("Authorization") != "Bearer 456" {
+					http.Error(rw, "Invalid token", http.StatusUnauthorized)
+					return
+				}
+				if req.Header.Get("Content-Type") != "application/merge-patch+json" {
+					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
+					return
+				}
+				if req.Header.Get("Last-Known-Version") != test.lastKnownVersion {
+					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
+					return
+				}
+
+				rw.WriteHeader(test.statusCode)
+
+				switch test.statusCode {
+				case http.StatusOK:
+					_, _ = rw.Write(test.resp)
+				default:
+					_ = json.NewEncoder(rw).Encode(APIError{Message: "error"})
+				}
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			c, err := NewClient(srv.URL, "456")
+			require.NoError(t, err)
+			c.retryableHTTPClient = srv.Client()
+
+			gotVersion, err := c.PatchTopology(context.Background(), test.patch, test.lastKnownVersion)
+			if test.wantErr != nil {
+				require.ErrorAs(t, err, test.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, 1, callCount)
+			assert.Equal(t, test.wantVersion, gotVersion)
 		})
 	}
 }
