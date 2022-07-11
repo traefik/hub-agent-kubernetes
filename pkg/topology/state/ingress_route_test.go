@@ -41,10 +41,9 @@ func init() {
 
 func TestFetcher_GetIngressRoutes(t *testing.T) {
 	tests := []struct {
-		desc               string
-		want               map[string]*IngressRoute
-		wantTraefikService map[string]string
-		fixture            string
+		desc    string
+		want    map[string]*IngressRoute
+		fixture string
 	}{
 		{
 			desc:    "One service",
@@ -84,9 +83,6 @@ func TestFetcher_GetIngressRoutes(t *testing.T) {
 					},
 					Services: []string{"service@ns"},
 				},
-			},
-			wantTraefikService: map[string]string{
-				"ns-name": "service@ns",
 			},
 		},
 		{
@@ -304,11 +300,10 @@ func TestFetcher_GetIngressRoutes(t *testing.T) {
 			f, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, "v1.20.1", "cluster-id")
 			require.NoError(t, err)
 
-			got, gotTraefikService, err := f.getIngressRoutes("cluster-id")
+			got, err := f.getIngressRoutes("cluster-id")
 			require.NoError(t, err)
 
 			assert.Equal(t, test.want, got)
-			assert.Equal(t, test.wantTraefikService, gotTraefikService)
 		})
 	}
 }

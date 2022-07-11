@@ -191,7 +191,7 @@ func (f *Fetcher) FetchState() (*Cluster, error) {
 		return nil, err
 	}
 
-	cluster.Services, cluster.TraefikServiceNames, err = f.getServices(cluster.ID, cluster.Apps)
+	cluster.Services, err = f.getServices(cluster.ID, cluster.Apps)
 	if err != nil {
 		return nil, err
 	}
@@ -207,14 +207,9 @@ func (f *Fetcher) FetchState() (*Cluster, error) {
 		return nil, err
 	}
 
-	var traefikService map[string]string
-	cluster.IngressRoutes, traefikService, err = f.getIngressRoutes(cluster.ID)
+	cluster.IngressRoutes, err = f.getIngressRoutes(cluster.ID)
 	if err != nil {
 		return nil, err
-	}
-
-	for ingressRoute, service := range traefikService {
-		cluster.TraefikServiceNames[ingressRoute] = service
 	}
 
 	cluster.AccessControlPolicies, err = f.getAccessControlPolicies(cluster.ID)

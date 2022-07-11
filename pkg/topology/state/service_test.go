@@ -65,10 +65,6 @@ func TestFetcher_GetServices(t *testing.T) {
 			ExternalPorts: []int{443},
 		},
 	}
-	wantNames := map[string]string{
-		"myns-myService-443":   "myService@myns",
-		"myns-myService-https": "myService@myns",
-	}
 
 	apps := map[string]*App{
 		"jeanmich@myns": {
@@ -136,11 +132,10 @@ func TestFetcher_GetServices(t *testing.T) {
 	f, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, "v1.20.1", "cluster-id")
 	require.NoError(t, err)
 
-	gotSvcs, gotNames, err := f.getServices("cluster-id", apps)
+	gotSvcs, err := f.getServices("cluster-id", apps)
 	require.NoError(t, err)
 
 	assert.Equal(t, wantSvcs, gotSvcs)
-	assert.Equal(t, wantNames, gotNames)
 }
 
 func TestFetcher_GetServicesWithExternalIPs(t *testing.T) {
@@ -178,10 +173,6 @@ func TestFetcher_GetServicesWithExternalIPs(t *testing.T) {
 				},
 			},
 		},
-	}
-	wantNames := map[string]string{
-		"myns-myService-443":   "myService@myns",
-		"myns-myService-https": "myService@myns",
 	}
 
 	apps := map[string]*App{
@@ -251,11 +242,10 @@ func TestFetcher_GetServicesWithExternalIPs(t *testing.T) {
 	f, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, "v1.20.1", "cluster-id")
 	require.NoError(t, err)
 
-	gotSvcs, gotNames, err := f.getServices("cluster-id", apps)
+	gotSvcs, err := f.getServices("cluster-id", apps)
 	require.NoError(t, err)
 
 	assert.Equal(t, wantSvcs, gotSvcs)
-	assert.Equal(t, wantNames, gotNames)
 }
 
 func TestFetcher_SelectApps(t *testing.T) {

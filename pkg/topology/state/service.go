@@ -30,14 +30,13 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-func (f *Fetcher) getServices(clusterID string, apps map[string]*App) (map[string]*Service, map[string]string, error) {
+func (f *Fetcher) getServices(clusterID string, apps map[string]*App) (map[string]*Service, error) {
 	services, err := f.k8s.Core().V1().Services().Lister().List(labels.Everything())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	svcs := make(map[string]*Service)
-	traefikNames := make(map[string]string)
 	for _, service := range services {
 		var externalPorts []int
 
@@ -74,24 +73,9 @@ func (f *Fetcher) getServices(clusterID string, apps map[string]*App) (map[strin
 			ExternalPorts: externalPorts,
 			status:        service.Status,
 		}
-
-		for _, key := range traefikServiceNames(service) {
-			traefikNames[key] = svcName
-		}
 	}
 
-	return svcs, traefikNames, nil
-}
-
-func traefikServiceNames(svc *corev1.Service) []string {
-	var result []string
-	for _, port := range svc.Spec.Ports {
-		result = append(result,
-			fmt.Sprintf("%s-%s-%d", svc.Namespace, svc.Name, port.Port),
-			fmt.Sprintf("%s-%s-%s", svc.Namespace, svc.Name, port.Name),
-		)
-	}
-	return result
+	return svcs, nil
 }
 
 func selectApps(apps map[string]*App, service *corev1.Service) []string {
