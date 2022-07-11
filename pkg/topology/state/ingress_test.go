@@ -19,16 +19,18 @@ package state
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	hubkubemock "github.com/traefik/hub-agent-kubernetes/pkg/crd/generated/client/hub/clientset/versioned/fake"
-	traefikkubemock "github.com/traefik/hub-agent-kubernetes/pkg/crd/generated/client/traefik/clientset/versioned/fake"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	kubemock "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 func TestFetcher_GetIngresses(t *testing.T) {
@@ -41,7 +43,6 @@ func TestFetcher_GetIngresses(t *testing.T) {
 				Namespace: "myns",
 			},
 			IngressMeta: IngressMeta{
-				ClusterID: "cluster-id",
 				Annotations: map[string]string{
 					"cert-manager.io/cluster-issuer": "foo",
 				},
@@ -84,13 +85,11 @@ func TestFetcher_GetIngresses(t *testing.T) {
 	objects := loadK8sObjects(t, "fixtures/ingress/one-ingress-matches-ingress-class.yml")
 
 	kubeClient := kubemock.NewSimpleClientset(objects...)
-	hubClient := hubkubemock.NewSimpleClientset()
-	traefikClient := traefikkubemock.NewSimpleClientset()
 
-	f, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, "v1.20.1", "cluster-id")
+	f, err := watchAll(context.Background(), kubeClient, "v1.20.1")
 	require.NoError(t, err)
 
-	got, err := f.getIngresses("cluster-id")
+	got, err := f.getIngresses()
 	require.NoError(t, err)
 
 	assert.Equal(t, want, got)
@@ -161,14 +160,11 @@ func TestFetcher_FetchIngresses(t *testing.T) {
 			},
 		},
 	}
-
 	objects := loadK8sObjects(t, "fixtures/ingress/v1.18-ingress.yml")
 
 	kubeClient := kubemock.NewSimpleClientset(objects...)
-	hubClient := hubkubemock.NewSimpleClientset()
-	traefikClient := traefikkubemock.NewSimpleClientset()
 
-	f, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, "v1.18", "cluster-id")
+	f, err := watchAll(context.Background(), kubeClient, "v1.18")
 	require.NoError(t, err)
 
 	got, err := f.fetchIngresses()
@@ -209,7 +205,7 @@ func Test_GetControllerType(t *testing.T) {
 					},
 				},
 			},
-			wantType: IngressControllerTypeTraefik,
+			wantType: "traefik",
 		},
 		{
 			desc: "IngressClassName matching unknown controller",
@@ -251,6 +247,30 @@ func Test_GetControllerType(t *testing.T) {
 			assert.Equal(t, test.wantType, getControllerType(test.ingress, test.ingressClasses))
 		})
 	}
+}
+
+func loadK8sObjects(t *testing.T, path string) []runtime.Object {
+	t.Helper()
+
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	files := strings.Split(string(content), "---")
+
+	objects := make([]runtime.Object, 0, len(files))
+	for _, file := range files {
+		if file == "\n" || file == "" {
+			continue
+		}
+
+		decoder := scheme.Codecs.UniversalDeserializer()
+		object, _, err := decoder.Decode([]byte(file), nil, nil)
+		require.NoError(t, err)
+
+		objects = append(objects, object)
+	}
+
+	return objects
 }
 
 func stringPtr(s string) *string {

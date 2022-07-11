@@ -25,8 +25,8 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/topology/store"
 )
 
-func newTopologyWatcher(ctx context.Context, fetcher *state.Fetcher, storeCfg store.Config) (*topology.Watcher, error) {
-	s, err := store.New(ctx, storeCfg)
+func newTopologyWatcher(ctx context.Context, fetcher *state.Fetcher) (*topology.Watcher, error) {
+	s := store.New(ctx)
 	if err != nil {
 		return nil, err
 	}

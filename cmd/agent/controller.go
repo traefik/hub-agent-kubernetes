@@ -30,7 +30,6 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/logger"
 	"github.com/traefik/hub-agent-kubernetes/pkg/platform"
 	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
-	"github.com/traefik/hub-agent-kubernetes/pkg/topology/store"
 	"github.com/traefik/hub-agent-kubernetes/pkg/version"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
@@ -118,16 +117,12 @@ func (c controllerCmd) run(cliCtx *cli.Context) error {
 
 	heartbeater := heartbeat.NewHeartbeater(platformClient)
 
-	hubClusterID, agentCfg, err := setup(cliCtx.Context, platformClient, kubeClient)
+	agentCfg, err := setup(cliCtx.Context, platformClient, kubeClient)
 	if err != nil {
 		return fmt.Errorf("setup agent: %w", err)
 	}
 
-	storeCfg := store.Config{
-		TopologyConfig: agentCfg.Topology,
-		Token:          token,
-	}
-	topoFetcher, err := state.NewFetcher(cliCtx.Context, hubClusterID)
+	topoFetcher, err := state.NewFetcher(cliCtx.Context)
 	if err != nil {
 		return err
 	}
@@ -173,23 +168,23 @@ func (c controllerCmd) run(cliCtx *cli.Context) error {
 	return group.Wait()
 }
 
-func setup(ctx context.Context, c *platform.Client, kubeClient clientset.Interface) (hubClusterID string, cfg platform.Config, err error) {
+func setup(ctx context.Context, c *platform.Client, kubeClient clientset.Interface) (platform.Config, error) {
 	ns, err := kubeClient.CoreV1().Namespaces().Get(ctx, metav1.NamespaceSystem, metav1.GetOptions{})
 	if err != nil {
-		return "", platform.Config{}, fmt.Errorf("get namespace: %w", err)
+		return platform.Config{}, fmt.Errorf("get namespace: %w", err)
 	}
 
-	hubClusterID, err = c.Link(ctx, string(ns.UID))
+	_, err = c.Link(ctx, string(ns.UID))
 	if err != nil {
-		return "", platform.Config{}, fmt.Errorf("link agent: %w", err)
+		return platform.Config{}, fmt.Errorf("link agent: %w", err)
 	}
 
-	cfg, err = c.GetConfig(ctx)
+	cfg, err := c.GetConfig(ctx)
 	if err != nil {
-		return "", platform.Config{}, fmt.Errorf("fetch agent config: %w", err)
+		return platform.Config{}, fmt.Errorf("fetch agent config: %w", err)
 	}
 
-	return hubClusterID, cfg, nil
+	return cfg, nil
 }
 
 func writePID() error {
