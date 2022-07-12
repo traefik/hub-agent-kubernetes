@@ -19,6 +19,7 @@ package platform
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -691,6 +692,7 @@ func (c *Client) FetchTopology(ctx context.Context) (topology state.Cluster, ver
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept-Encoding", "gzip")
 
 	resp, err := c.retryableHTTPClient.Do(req)
 	if err != nil {
@@ -698,23 +700,26 @@ func (c *Client) FetchTopology(ctx context.Context) (topology state.Cluster, ver
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		all, _ := io.ReadAll(resp.Body)
+	body, err := ungzipBody(resp)
+	if err != nil {
+		return state.Cluster{}, "", err
+	}
 
+	if resp.StatusCode != http.StatusOK {
 		apiErr := APIError{StatusCode: resp.StatusCode}
-		if err = json.Unmarshal(all, &apiErr); err != nil {
-			apiErr.Message = string(all)
+		if err = json.Unmarshal(body, &apiErr); err != nil {
+			apiErr.Message = string(body)
 		}
 
 		return state.Cluster{}, "", apiErr
 	}
 
-	var body fetchResp
-	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	var r fetchResp
+	if err = json.Unmarshal(body, &r); err != nil {
 		return state.Cluster{}, "", fmt.Errorf("decode topology: %w", err)
 	}
 
-	return body.Topology, body.Version, nil
+	return r.Topology, r.Version, nil
 }
 
 type patchResp struct {
@@ -730,7 +735,7 @@ func (c *Client) PatchTopology(ctx context.Context, patch []byte, lastKnownVersi
 		return "", fmt.Errorf("parse endpoint: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, baseURL.String(), bytes.NewReader(patch))
+	req, err := newGzippedRequestWithContext(ctx, http.MethodPatch, baseURL.String(), patch)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
@@ -768,4 +773,45 @@ func (c *Client) PatchTopology(ctx context.Context, patch []byte, lastKnownVersi
 	}
 
 	return body.Version, nil
+}
+
+func newGzippedRequestWithContext(ctx context.Context, verb string, u string, body []byte) (*http.Request, error) {
+	var compressedBody bytes.Buffer
+
+	writer := gzip.NewWriter(&compressedBody)
+	_, err := writer.Write(body)
+	if err != nil {
+		return nil, fmt.Errorf("gzip write: %w", err)
+	}
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("gzip close: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, verb, u, &compressedBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Encoding", "gzip")
+
+	return req, nil
+}
+
+func ungzipBody(resp *http.Response) ([]byte, error) {
+	contentEncoding := resp.Header.Get("Content-Encoding")
+
+	switch contentEncoding {
+	case "gzip":
+		reader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("create gzip reader: %w", err)
+		}
+		defer func() { _ = reader.Close() }()
+
+		return io.ReadAll(reader)
+	case "":
+		return io.ReadAll(resp.Body)
+	default:
+		return nil, fmt.Errorf("unsupported content encoding %q", contentEncoding)
+	}
 }

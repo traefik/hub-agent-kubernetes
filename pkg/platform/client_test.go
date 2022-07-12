@@ -19,6 +19,7 @@ package platform
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1237,6 +1238,28 @@ func TestClient_PatchTopology(t *testing.T) {
 				}
 				if req.Header.Get("Last-Known-Version") != test.lastKnownVersion {
 					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
+					return
+				}
+				if req.Header.Get("Content-Encoding") != "gzip" {
+					http.Error(rw, "Invalid Content-Encoding", http.StatusBadRequest)
+					return
+				}
+
+				reader, err := gzip.NewReader(req.Body)
+				if err != nil {
+					http.Error(rw, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer func() { _ = reader.Close() }()
+
+				body, err := io.ReadAll(reader)
+				if err != nil {
+					http.Error(rw, err.Error(), http.StatusInternalServerError)
+					return
+				}
+
+				if !bytes.Equal(test.patch, body) {
+					http.Error(rw, err.Error(), http.StatusBadRequest)
 					return
 				}
 
