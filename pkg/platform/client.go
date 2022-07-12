@@ -633,7 +633,7 @@ func (c *Client) GetEdgeIngresses(ctx context.Context) ([]edgeingress.EdgeIngres
 	return edgeIngresses, nil
 }
 
-// GetCertificate obtains a certificate for the workspace.
+// GetCertificate gets a certificate for the workspace.
 func (c *Client) GetCertificate(ctx context.Context) (edgeingress.Certificate, error) {
 	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "wildcard-certificate"))
 	if err != nil {
@@ -666,7 +666,52 @@ func (c *Client) GetCertificate(ctx context.Context) (edgeingress.Certificate, e
 
 	var cert edgeingress.Certificate
 	if err = json.NewDecoder(resp.Body).Decode(&cert); err != nil {
-		return edgeingress.Certificate{}, fmt.Errorf("decode obtain resp: %w", err)
+		return edgeingress.Certificate{}, fmt.Errorf("decode get wildcard certificate resp: %w", err)
+	}
+
+	return cert, nil
+}
+
+// GetCertificateByDomains gets a certificate for the given domains.
+func (c *Client) GetCertificateByDomains(ctx context.Context, domains []string) (edgeingress.Certificate, error) {
+	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "certificate"))
+	if err != nil {
+		return edgeingress.Certificate{}, fmt.Errorf("parse endpoint: %w", err)
+	}
+
+	query := baseURL.Query()
+	for _, domain := range domains {
+		query.Add("domains", domain)
+	}
+	baseURL.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL.String(), http.NoBody)
+	if err != nil {
+		return edgeingress.Certificate{}, fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return edgeingress.Certificate{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		all, _ := io.ReadAll(resp.Body)
+
+		apiErr := APIError{StatusCode: resp.StatusCode}
+		if err = json.Unmarshal(all, &apiErr); err != nil {
+			apiErr.Message = string(all)
+		}
+
+		return edgeingress.Certificate{}, apiErr
+	}
+
+	var cert edgeingress.Certificate
+	if err = json.NewDecoder(resp.Body).Decode(&cert); err != nil {
+		return edgeingress.Certificate{}, fmt.Errorf("decode get certificate resp: %w", err)
 	}
 
 	return cert, nil

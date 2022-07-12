@@ -21,7 +21,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"reflect"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -41,14 +41,16 @@ import (
 )
 
 const (
-	catchAllName = "hub-catch-all"
-	secretName   = "hub-certificate"
+	catchAllName            = "hub-catch-all"
+	secretName              = "hub-certificate"
+	secretCustomDomainsName = "hub-certificate-custom-domains"
 )
 
 // PlatformClient for the EdgeIngress service.
 type PlatformClient interface {
 	GetEdgeIngresses(ctx context.Context) ([]EdgeIngress, error)
 	GetCertificate(ctx context.Context) (Certificate, error)
+	GetCertificateByDomains(ctx context.Context, domains []string) (Certificate, error)
 }
 
 // WatcherConfig holds the watcher configuration.
@@ -130,7 +132,7 @@ func (w *Watcher) syncCertificate(ctx context.Context) error {
 		return fmt.Errorf("get certificate: %w", err)
 	}
 
-	if err = w.upsertSecret(ctx, certificate); err != nil {
+	if err = w.upsertSecret(ctx, certificate, secretName, w.config.AgentNamespace); err != nil {
 		return fmt.Errorf("upsert secret: %w", err)
 	}
 
@@ -162,12 +164,6 @@ func (w *Watcher) syncEdgeIngresses(ctx context.Context) {
 		// We delete the policy from the map, since we use this map to delete unused policies.
 		delete(clusterEdgeIngressByID, platformEdgeIng.Name+"@"+platformEdgeIng.Namespace)
 
-		if found && !needUpdate(buildResourceSpec(&platformEdgeIng), clusterEdgeIng.Spec) {
-			w.syncChildAndUpdateConnectionStatus(ctx, clusterEdgeIng)
-
-			continue
-		}
-
 		if !found {
 			if err := w.createEdgeIngress(ctx, &platformEdgeIng); err != nil {
 				log.Error().Err(err).
@@ -175,6 +171,20 @@ func (w *Watcher) syncEdgeIngresses(ctx context.Context) {
 					Str("namespace", platformEdgeIng.Namespace).
 					Msg("Unable to create EdgeIngress")
 			}
+			continue
+		}
+
+		if platformEdgeIng.Version == clusterEdgeIng.Status.Version {
+			if clusterEdgeIng.Status.Connection == hubv1alpha1.EdgeIngressConnectionUp {
+				continue
+			}
+			if err := w.syncChildAndUpdateConnectionStatus(ctx, clusterEdgeIng, platformEdgeIng.CustomDomains); err != nil {
+				log.Error().Err(err).
+					Str("name", platformEdgeIng.Name).
+					Str("namespace", platformEdgeIng.Namespace).
+					Msg("Unable to sync child resources")
+			}
+
 			continue
 		}
 
@@ -190,34 +200,44 @@ func (w *Watcher) syncEdgeIngresses(ctx context.Context) {
 	w.cleanEdgeIngresses(ctx, clusterEdgeIngressByID)
 }
 
-func (w *Watcher) syncChildAndUpdateConnectionStatus(ctx context.Context, edgeIngress *hubv1alpha1.EdgeIngress) {
-	connectionStatus := hubv1alpha1.EdgeIngressConnectionUp
-
-	if err := w.upsertIngress(ctx, edgeIngress); err != nil {
-		connectionStatus = hubv1alpha1.EdgeIngressConnectionDown
-
-		log.Error().Err(err).
-			Str("name", edgeIngress.Name).
-			Str("namespace", edgeIngress.Namespace).
-			Msg("Unable to upsert ingress")
+func (w *Watcher) syncChildAndUpdateConnectionStatus(ctx context.Context, edgeIngress *hubv1alpha1.EdgeIngress, customDomains []Domain) error {
+	var customDomainsName []string
+	for _, customDomain := range customDomains {
+		if customDomain.Verified {
+			customDomainsName = append(customDomainsName, customDomain.Name)
+		}
 	}
 
-	if err := w.updateEdgeIngressConnectionStatus(ctx, edgeIngress, connectionStatus); err != nil {
-		log.Error().Err(err).
-			Str("name", edgeIngress.Name).
-			Str("namespace", edgeIngress.Namespace).
-			Msg("Update edgeIngress status connection failed")
+	if len(customDomainsName) > 0 {
+		cert, err := w.client.GetCertificateByDomains(ctx, customDomainsName)
+		if err != nil {
+			return fmt.Errorf("get certificate by domains %q: %w", strings.Join(customDomainsName, ","), err)
+		}
+
+		if err := w.upsertSecret(ctx, cert, secretCustomDomainsName+"-"+edgeIngress.Name, edgeIngress.Namespace); err != nil {
+			return fmt.Errorf("upsert secret: %w", err)
+		}
 	}
+
+	if err := w.upsertIngress(ctx, edgeIngress, customDomainsName); err != nil {
+		return fmt.Errorf("upsert ingress: %w", err)
+	}
+
+	if err := w.setEdgeIngressConnectionStatusUP(ctx, edgeIngress); err != nil {
+		return fmt.Errorf("update edge ingress status: %w", err)
+	}
+
+	return nil
 }
 
-func (w *Watcher) upsertIngress(ctx context.Context, edgeIng *hubv1alpha1.EdgeIngress) error {
+func (w *Watcher) upsertIngress(ctx context.Context, edgeIng *hubv1alpha1.EdgeIngress, customDomains []string) error {
 	ing, err := w.clientSet.NetworkingV1().Ingresses(edgeIng.Namespace).Get(ctx, edgeIng.Name, metav1.GetOptions{})
 	if err != nil && !kerror.IsNotFound(err) {
 		return fmt.Errorf("get ingress: %w", err)
 	}
 
 	if kerror.IsNotFound(err) {
-		ing = buildIngress(edgeIng, &netv1.Ingress{}, w.config.IngressClassName, w.config.TraefikEntryPoint)
+		ing = buildIngress(edgeIng, &netv1.Ingress{}, w.config.IngressClassName, w.config.TraefikEntryPoint, customDomains)
 		_, err = w.clientSet.NetworkingV1().Ingresses(edgeIng.Namespace).Create(ctx, ing, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("create ingress: %w", err)
@@ -231,7 +251,7 @@ func (w *Watcher) upsertIngress(ctx context.Context, edgeIng *hubv1alpha1.EdgeIn
 		return nil
 	}
 
-	ing = buildIngress(edgeIng, ing, w.config.IngressClassName, w.config.TraefikEntryPoint)
+	ing = buildIngress(edgeIng, ing, w.config.IngressClassName, w.config.TraefikEntryPoint, customDomains)
 	_, err = w.clientSet.NetworkingV1().Ingresses(edgeIng.Namespace).Update(ctx, ing, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("update ingress: %w", err)
@@ -331,8 +351,8 @@ func (w *Watcher) createIngressCatchAll(ctx context.Context) error {
 	return nil
 }
 
-func (w *Watcher) upsertSecret(ctx context.Context, cert Certificate) error {
-	secret, err := w.clientSet.CoreV1().Secrets(w.config.AgentNamespace).Get(ctx, secretName, metav1.GetOptions{})
+func (w *Watcher) upsertSecret(ctx context.Context, cert Certificate, name, namespace string) error {
+	secret, err := w.clientSet.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil && !kerror.IsNotFound(err) {
 		return fmt.Errorf("get secret: %w", err)
 	}
@@ -340,8 +360,8 @@ func (w *Watcher) upsertSecret(ctx context.Context, cert Certificate) error {
 	if kerror.IsNotFound(err) {
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      secretName,
-				Namespace: w.config.AgentNamespace,
+				Name:      name,
+				Namespace: namespace,
 				Annotations: map[string]string{
 					"app.kubernetes.io/managed-by": "traefik-hub",
 				},
@@ -353,7 +373,7 @@ func (w *Watcher) upsertSecret(ctx context.Context, cert Certificate) error {
 			},
 		}
 
-		_, err = w.clientSet.CoreV1().Secrets(w.config.AgentNamespace).Create(ctx, secret, metav1.CreateOptions{})
+		_, err = w.clientSet.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("create secret: %w", err)
 		}
@@ -374,7 +394,7 @@ func (w *Watcher) upsertSecret(ctx context.Context, cert Certificate) error {
 		"tls.crt": cert.Certificate,
 		"tls.key": cert.PrivateKey,
 	}
-	_, err = w.clientSet.CoreV1().Secrets(w.config.AgentNamespace).Update(ctx, secret, metav1.UpdateOptions{})
+	_, err = w.clientSet.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("update secret: %w", err)
 	}
@@ -387,8 +407,8 @@ func (w *Watcher) upsertSecret(ctx context.Context, cert Certificate) error {
 	return nil
 }
 
-func (w *Watcher) updateEdgeIngressConnectionStatus(ctx context.Context, edgeIngress *hubv1alpha1.EdgeIngress, connection hubv1alpha1.EdgeIngressConnectionStatus) error {
-	edgeIngress.Status.Connection = connection
+func (w *Watcher) setEdgeIngressConnectionStatusUP(ctx context.Context, edgeIngress *hubv1alpha1.EdgeIngress) error {
+	edgeIngress.Status.Connection = hubv1alpha1.EdgeIngressConnectionUp
 
 	ctxUpdate, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -401,8 +421,7 @@ func (w *Watcher) updateEdgeIngressConnectionStatus(ctx context.Context, edgeIng
 	log.Debug().
 		Str("name", edgeIngress.Name).
 		Str("namespace", edgeIngress.Namespace).
-		Str("connection_state", string(connection)).
-		Msg("EdgeIngress connection status updated")
+		Msg("EdgeIngress connection set status up")
 
 	return nil
 }
@@ -423,11 +442,7 @@ func (w *Watcher) createEdgeIngress(ctx context.Context, edgeIng *EdgeIngress) e
 		Str("namespace", obj.Namespace).
 		Msg("EdgeIngress created")
 
-	if err = w.upsertIngress(ctx, obj); err != nil {
-		return fmt.Errorf("upsert ingress: %w", err)
-	}
-
-	return w.updateEdgeIngressConnectionStatus(ctx, obj, hubv1alpha1.EdgeIngressConnectionUp)
+	return w.syncChildAndUpdateConnectionStatus(ctx, obj, edgeIng.CustomDomains)
 }
 
 func (w *Watcher) updateEdgeIngress(ctx context.Context, oldEdgeIng *hubv1alpha1.EdgeIngress, newEdgeIng *EdgeIngress) error {
@@ -449,11 +464,7 @@ func (w *Watcher) updateEdgeIngress(ctx context.Context, oldEdgeIng *hubv1alpha1
 		Str("namespace", obj.Namespace).
 		Msg("EdgeIngress updated")
 
-	if err = w.upsertIngress(ctx, obj); err != nil {
-		return fmt.Errorf("upsert ingress: %w", err)
-	}
-
-	return w.updateEdgeIngressConnectionStatus(ctx, obj, hubv1alpha1.EdgeIngressConnectionUp)
+	return w.syncChildAndUpdateConnectionStatus(ctx, obj, newEdgeIng.CustomDomains)
 }
 
 func (w *Watcher) cleanEdgeIngresses(ctx context.Context, edgeIngs map[string]*hubv1alpha1.EdgeIngress) {
@@ -478,10 +489,6 @@ func (w *Watcher) cleanEdgeIngresses(ctx context.Context, edgeIngs map[string]*h
 	}
 }
 
-func needUpdate(a, b hubv1alpha1.EdgeIngressSpec) bool {
-	return !reflect.DeepEqual(a, b)
-}
-
 func buildResourceSpec(edgeIng *EdgeIngress) hubv1alpha1.EdgeIngressSpec {
 	spec := hubv1alpha1.EdgeIngressSpec{
 		Service: hubv1alpha1.EdgeIngressService{
@@ -499,7 +506,7 @@ func buildResourceSpec(edgeIng *EdgeIngress) hubv1alpha1.EdgeIngressSpec {
 	return spec
 }
 
-func buildIngress(edgeIng *hubv1alpha1.EdgeIngress, ing *netv1.Ingress, ingressClassName, entryPoint string) *netv1.Ingress {
+func buildIngress(edgeIng *hubv1alpha1.EdgeIngress, ing *netv1.Ingress, ingressClassName, entryPoint string, customDomains []string) *netv1.Ingress {
 	annotations := map[string]string{
 		"traefik.ingress.kubernetes.io/router.tls":         "true",
 		"traefik.ingress.kubernetes.io/router.entrypoints": entryPoint,
@@ -528,6 +535,24 @@ func buildIngress(edgeIng *hubv1alpha1.EdgeIngress, ing *netv1.Ingress, ingressC
 
 	// No secret is needed for TLS because we will use the wildcard certificate configured in the catch-all ingress.
 	pathType := netv1.PathTypePrefix
+	IngressRule := netv1.IngressRuleValue{
+		HTTP: &netv1.HTTPIngressRuleValue{
+			Paths: []netv1.HTTPIngressPath{
+				{
+					Path:     "/",
+					PathType: &pathType,
+					Backend: netv1.IngressBackend{
+						Service: &netv1.IngressServiceBackend{
+							Name: edgeIng.Spec.Service.Name,
+							Port: netv1.ServiceBackendPort{
+								Number: int32(edgeIng.Spec.Service.Port),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 	ing.Spec = netv1.IngressSpec{
 		IngressClassName: pointer.StringPtr(ingressClassName),
 		TLS: []netv1.IngressTLS{
@@ -537,27 +562,26 @@ func buildIngress(edgeIng *hubv1alpha1.EdgeIngress, ing *netv1.Ingress, ingressC
 		},
 		Rules: []netv1.IngressRule{
 			{
-				Host: edgeIng.Status.Domain,
-				IngressRuleValue: netv1.IngressRuleValue{
-					HTTP: &netv1.HTTPIngressRuleValue{
-						Paths: []netv1.HTTPIngressPath{
-							{
-								Path:     "/",
-								PathType: &pathType,
-								Backend: netv1.IngressBackend{
-									Service: &netv1.IngressServiceBackend{
-										Name: edgeIng.Spec.Service.Name,
-										Port: netv1.ServiceBackendPort{
-											Number: int32(edgeIng.Spec.Service.Port),
-										},
-									},
-								},
-							},
-						},
-					},
-				},
+				Host:             edgeIng.Status.Domain,
+				IngressRuleValue: IngressRule,
 			},
 		},
+	}
+
+	if len(customDomains) == 0 {
+		return ing
+	}
+
+	ing.Spec.TLS = append(ing.Spec.TLS, netv1.IngressTLS{
+		SecretName: secretCustomDomainsName + "-" + ing.Name,
+		Hosts:      customDomains,
+	})
+
+	for _, customDomain := range customDomains {
+		ing.Spec.Rules = append(ing.Spec.Rules, netv1.IngressRule{
+			Host:             customDomain,
+			IngressRuleValue: IngressRule,
+		})
 	}
 
 	return ing

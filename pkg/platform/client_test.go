@@ -1035,3 +1035,86 @@ func Test_GetCertificate(t *testing.T) {
 		})
 	}
 }
+
+func Test_GetCertificateByDomain(t *testing.T) {
+	tests := []struct {
+		desc       string
+		statusCode int
+		wantCert   edgeingress.Certificate
+		wantErr    error
+	}{
+		{
+			desc:       "get certificate succeed",
+			statusCode: http.StatusOK,
+			wantCert: edgeingress.Certificate{
+				Certificate: []byte("cert"),
+				PrivateKey:  []byte("key"),
+			},
+		},
+		{
+			desc:       "get certificate unexpected error",
+			statusCode: http.StatusTeapot,
+			wantCert:   edgeingress.Certificate{},
+			wantErr: &APIError{
+				StatusCode: http.StatusTeapot,
+				Message:    "error",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			var callCount int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/certificate", func(rw http.ResponseWriter, req *http.Request) {
+				callCount++
+
+				if req.Method != http.MethodGet {
+					http.Error(rw, fmt.Sprintf("unsupported method: %s", req.Method), http.StatusMethodNotAllowed)
+					return
+				}
+
+				if req.Header.Get("Authorization") != "Bearer 123" {
+					http.Error(rw, "Invalid token", http.StatusUnauthorized)
+					return
+				}
+
+				gotDomain := req.URL.Query()["domains"]
+				assert.Equal(t, []string{"a.com", "b.com"}, gotDomain)
+
+				rw.WriteHeader(test.statusCode)
+
+				switch test.statusCode {
+				case http.StatusAccepted:
+				case http.StatusOK:
+					_ = json.NewEncoder(rw).Encode(test.wantCert)
+
+				default:
+					_ = json.NewEncoder(rw).Encode(APIError{Message: "error"})
+				}
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			c, err := NewClient(srv.URL, "123")
+			require.NoError(t, err)
+			c.httpClient = srv.Client()
+
+			gotCert, err := c.GetCertificateByDomains(context.Background(), []string{"a.com", "b.com"})
+			if test.wantErr != nil {
+				require.ErrorAs(t, err, test.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, 1, callCount)
+			assert.Equal(t, test.wantCert, gotCert)
+		})
+	}
+}
