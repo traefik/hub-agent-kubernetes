@@ -775,7 +775,7 @@ func (c *Client) PatchTopology(ctx context.Context, patch []byte, lastKnownVersi
 	return body.Version, nil
 }
 
-func newGzippedRequestWithContext(ctx context.Context, verb string, u string, body []byte) (*http.Request, error) {
+func newGzippedRequestWithContext(ctx context.Context, verb, u string, body []byte) (*http.Request, error) {
 	var compressedBody bytes.Buffer
 
 	writer := gzip.NewWriter(&compressedBody)

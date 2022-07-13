@@ -1259,7 +1259,7 @@ func TestClient_PatchTopology(t *testing.T) {
 				}
 
 				if !bytes.Equal(test.patch, body) {
-					http.Error(rw, err.Error(), http.StatusBadRequest)
+					http.Error(rw, "invalid patch", http.StatusBadRequest)
 					return
 				}
 

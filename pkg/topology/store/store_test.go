@@ -23,6 +23,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -606,7 +607,7 @@ func TestStore_Write_abortOnFetchFailure(t *testing.T) {
 	assert.Equal(t, "version-2", s.lastKnownVersion)
 }
 
-func TestStore_Write_giveUpOnRetryingIfMaxRetryReached(t *testing.T) {
+func TestStore_Write_giveUpOnRetryingWhenReachedBackoffLimit(t *testing.T) {
 	platformClient := newPlatformClientMock(t).
 		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-1", nil).Once().
 		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 2}}, "version-2", nil).Once().
@@ -615,11 +616,13 @@ func TestStore_Write_giveUpOnRetryingIfMaxRetryReached(t *testing.T) {
 		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-2").TypedReturns("", platform.APIError{Retryable: true}).Once().
 		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-3").TypedReturns("", platform.APIError{Retryable: true}).Once().
 		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-4", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-4").TypedReturns("version-5", nil).Once().
+		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-4").TypedReturns("", platform.APIError{Retryable: true}).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 2}}, "version-5", nil).Once().
+		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-5").TypedReturns("version-6", nil).Once().
 		Parent
 
 	s := New(platformClient)
-	s.maxPatchRetry = 3
+	s.backoff = &backoffMock{MaxRetries: 3}
 
 	newTopology := state.Cluster{
 		Overview: state.Overview{
@@ -634,7 +637,7 @@ func TestStore_Write_giveUpOnRetryingIfMaxRetryReached(t *testing.T) {
 	// Apply the same topology with a successful patch.
 	err = s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
-	assert.Equal(t, "version-5", s.lastKnownVersion)
+	assert.Equal(t, "version-6", s.lastKnownVersion)
 }
 
 func removeSpaces(s string) string {
@@ -643,4 +646,22 @@ func removeSpaces(s string) string {
 	s = strings.ReplaceAll(s, "\t", "")
 
 	return s
+}
+
+type backoffMock struct {
+	MaxRetries int
+	retries    int
+}
+
+func (b *backoffMock) NextBackOff() time.Duration {
+	if b.retries >= b.MaxRetries-1 {
+		return -1
+	}
+
+	b.retries++
+	return time.Millisecond
+}
+
+func (b *backoffMock) Reset() {
+	b.retries = 0
 }

@@ -208,3 +208,6 @@ issues:
     - path: pkg/crd/api/hub/v1alpha1/edge_ingress.go
       linters:
         - gosec # sha1 is not used to encrypt data, no security issue
+    - path: pkg/platform/client_test.go
+      linters:
+        - gocognit
