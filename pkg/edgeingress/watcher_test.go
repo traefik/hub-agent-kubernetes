@@ -269,7 +269,7 @@ func Test_WatcherRun_handle_custom_domains(t *testing.T) {
 			Version:   "version-2",
 			Service:   Service{Name: "service-2", Port: 8082},
 			ACP:       &ACP{Name: "acp-name"},
-			CustomDomains: []Domain{
+			CustomDomains: []CustomDomain{
 				{
 					Name:     "customDomain.com",
 					Verified: true,

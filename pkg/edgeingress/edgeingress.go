@@ -38,8 +38,8 @@ type EdgeIngress struct {
 	Namespace   string `json:"namespace"`
 	Name        string `json:"name"`
 
-	Domain        string   `json:"domain"`
-	CustomDomains []Domain `json:"customDomains"`
+	Domain        string         `json:"domain"`
+	CustomDomains []CustomDomain `json:"customDomains"`
 
 	Version string  `json:"version"`
 	Service Service `json:"service"`
@@ -49,8 +49,8 @@ type EdgeIngress struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Domain holds domain information.
-type Domain struct {
+// CustomDomain holds domain information.
+type CustomDomain struct {
 	Name     string `json:"name"`
 	Verified bool   `json:"verified"`
 }

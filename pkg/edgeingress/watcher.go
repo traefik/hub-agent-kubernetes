@@ -200,7 +200,7 @@ func (w *Watcher) syncEdgeIngresses(ctx context.Context) {
 	w.cleanEdgeIngresses(ctx, clusterEdgeIngressByID)
 }
 
-func (w *Watcher) syncChildAndUpdateConnectionStatus(ctx context.Context, edgeIngress *hubv1alpha1.EdgeIngress, customDomains []Domain) error {
+func (w *Watcher) syncChildAndUpdateConnectionStatus(ctx context.Context, edgeIngress *hubv1alpha1.EdgeIngress, customDomains []CustomDomain) error {
 	var customDomainsName []string
 	for _, customDomain := range customDomains {
 		if customDomain.Verified {
