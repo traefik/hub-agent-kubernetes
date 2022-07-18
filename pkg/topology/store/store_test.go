@@ -21,9 +21,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,24 +34,17 @@ import (
 func TestStore_Write_fetchAndPatch(t *testing.T) {
 	tests := []struct {
 		desc            string
-		fetchedVersion  string
+		fetchedVersion  int64
 		fetchedTopology state.Cluster
 		newTopology     state.Cluster
 		wantPatch       string
-		wantVersion     string
+		wantVersion     int64
 	}{
 		{
-			desc:           "add one service",
-			fetchedVersion: "version-1",
-			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 0,
-				},
-			},
+			desc:            "add one service",
+			fetchedVersion:  1,
+			fetchedTopology: state.Cluster{},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -72,7 +65,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			wantPatch: `{
-				"overview": { "serviceCount":1 },
 				"services": {
 					"service-1@ns": {
 						"annotations":{"key":"value"},
@@ -84,15 +76,12 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 					}
 				}
 			}`,
-			wantVersion: "version-2",
+			wantVersion: 2,
 		},
 		{
 			desc:           "update a single service property",
-			fetchedVersion: "version-1",
+			fetchedVersion: 1,
 			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -105,9 +94,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -134,15 +120,12 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 					}
 				}
 			}`,
-			wantVersion: "version-2",
+			wantVersion: 2,
 		},
 		{
 			desc:           "delete a single service property",
-			fetchedVersion: "version-1",
+			fetchedVersion: 1,
 			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -155,9 +138,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -183,15 +163,12 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 					}
 				}
 			}`,
-			wantVersion: "version-2",
+			wantVersion: 2,
 		},
 		{
 			desc:           "added one port in a service",
-			fetchedVersion: "version-1",
+			fetchedVersion: 1,
 			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -204,9 +181,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -233,15 +207,12 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 					}
 				}
 			}`,
-			wantVersion: "version-2",
+			wantVersion: 2,
 		},
 		{
 			desc:           "delete a service",
-			fetchedVersion: "version-1",
+			fetchedVersion: 1,
 			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -254,9 +225,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 0,
-				},
 				Services: map[string]*state.Service{},
 				Ingresses: map[string]*state.Ingress{
 					"ingress-1@ns": {
@@ -268,22 +236,16 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			wantPatch: `{
-				"overview": {
-					"serviceCount": 0
-				},
 				"services": {
 					"service-1@ns": null
 				}
 			}`,
-			wantVersion: "version-2",
+			wantVersion: 2,
 		},
 		{
 			desc:           "mixed update and delete",
-			fetchedVersion: "version-1",
+			fetchedVersion: 1,
 			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -304,9 +266,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-2@ns": {
 						Name:        "service-2",
@@ -335,15 +294,12 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 					}
 				}
 			}`,
-			wantVersion: "version-2",
+			wantVersion: 2,
 		},
 		{
 			desc:           "no different",
-			fetchedVersion: "version-1",
+			fetchedVersion: 1,
 			fetchedTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -356,9 +312,6 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 				},
 			},
 			newTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -370,7 +323,7 @@ func TestStore_Write_fetchAndPatch(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: "version-1",
+			wantVersion: 1,
 		},
 	}
 
@@ -408,19 +361,16 @@ func TestStore_Write_alreadyFetched(t *testing.T) {
 					"annotations":{"key":"new-value"}
 				}
 			}
-		}`)), "version-1").
-		TypedReturns("version-2", nil).
+		}`)), 1).
+		TypedReturns(2, nil).
 		Once().
 		Parent
 
 	var err error
 
 	s := New(platformClient)
-	s.lastKnownVersion = "version-1"
+	s.lastKnownVersion = 1
 	s.lastTopology, err = json.Marshal(state.Cluster{
-		Overview: state.Overview{
-			ServiceCount: 1,
-		},
 		Services: map[string]*state.Service{
 			"service-1@ns": {
 				Name:          "service-1",
@@ -435,9 +385,6 @@ func TestStore_Write_alreadyFetched(t *testing.T) {
 	require.NoError(t, err)
 
 	newTopology := state.Cluster{
-		Overview: state.Overview{
-			ServiceCount: 1,
-		},
 		Services: map[string]*state.Service{
 			"service-1@ns": {
 				Name:          "service-1",
@@ -453,39 +400,36 @@ func TestStore_Write_alreadyFetched(t *testing.T) {
 	err = s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
 
-	assert.Equal(t, "version-2", s.lastKnownVersion)
+	assert.EqualValues(t, 2, s.lastKnownVersion)
 }
 
 func TestStore_Write_retryOnPatchRetryableFailure(t *testing.T) {
 	platformClient := newPlatformClientMock(t).
 		OnFetchTopology().
 		TypedReturns(state.Cluster{
-			Overview: state.Overview{ServiceCount: 1},
 			Services: map[string]*state.Service{
 				"service-1@ns": {Name: "service-1", Namespace: "ns", ExternalPorts: []int{8080}},
 			},
-		}, "version-1", nil).Once().
+		}, 1, nil).Once().
 		OnFetchTopology().
 		TypedReturns(state.Cluster{
-			Overview: state.Overview{ServiceCount: 1},
 			Services: map[string]*state.Service{
 				"service-1@ns": {Name: "service-1", Namespace: "ns", ExternalPorts: []int{8080, 8081}},
 			},
-		}, "version-2", nil).Once().
+		}, 2, nil).Once().
 		OnFetchTopology().
 		TypedReturns(state.Cluster{
-			Overview: state.Overview{ServiceCount: 1},
 			Services: map[string]*state.Service{
 				"service-1@ns": {Name: "service-1", Namespace: "ns", ExternalPorts: []int{8080, 8081, 8082}},
 			},
-		}, "version-3", nil).Once().
+		}, 3, nil).Once().
 		OnPatchTopology([]byte(removeSpaces(`{
 			"services": {
 				"service-1@ns": {
 					"annotations": {"key":"value"}
 				}
 			}
-		}`)), "version-1").TypedReturns("", platform.APIError{Retryable: true}).Once().
+		}`)), 1).TypedReturns(0, platform.APIError{StatusCode: http.StatusConflict}).Once().
 		OnPatchTopology([]byte(removeSpaces(`{
 			"services": {
 				"service-1@ns": {
@@ -493,7 +437,7 @@ func TestStore_Write_retryOnPatchRetryableFailure(t *testing.T) {
 					"externalPorts": [8080]
 				}
 			}
-		}`)), "version-2").TypedReturns("", platform.APIError{Retryable: true}).Once().
+		}`)), 2).TypedReturns(0, platform.APIError{StatusCode: http.StatusConflict}).Once().
 		OnPatchTopology([]byte(removeSpaces(`{
 			"services": {
 				"service-1@ns": {
@@ -501,15 +445,12 @@ func TestStore_Write_retryOnPatchRetryableFailure(t *testing.T) {
 					"externalPorts": [8080]
 				}
 			}
-		}`)), "version-3").TypedReturns("version-4", nil).Once().
+		}`)), 3).TypedReturns(4, nil).Once().
 		Parent
 
 	s := New(platformClient)
 
 	newTopology := state.Cluster{
-		Overview: state.Overview{
-			ServiceCount: 1,
-		},
 		Services: map[string]*state.Service{
 			"service-1@ns": {
 				Name:          "service-1",
@@ -522,71 +463,70 @@ func TestStore_Write_retryOnPatchRetryableFailure(t *testing.T) {
 
 	err := s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
-	assert.Equal(t, "version-4", s.lastKnownVersion)
+	assert.EqualValues(t, 4, s.lastKnownVersion)
 
 	// Apply the same topology and make sure it did nothing.
 	err = s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
-	assert.Equal(t, "version-4", s.lastKnownVersion)
+	assert.EqualValues(t, 4, s.lastKnownVersion)
 }
 
 func TestStore_Write_doNotRetryOnPatchFatalFailure(t *testing.T) {
 	platformClient := newPlatformClientMock(t).
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-1", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-1").TypedReturns("", errors.New("boom")).Once().
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-2", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-2").TypedReturns("", platform.APIError{Retryable: false}).Once().
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-3", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-3").TypedReturns("version-4", nil).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-1"}}}, 1, nil).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"namespace":"default"}}}`), 1).TypedReturns(0, errors.New("boom")).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-1"}}}, 2, nil).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"namespace":"default"}}}`), 2).TypedReturns(0, platform.APIError{StatusCode: http.StatusInternalServerError}).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-1"}}}, 3, nil).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"namespace":"default"}}}`), 3).TypedReturns(4, nil).Once().
 		Parent
 
 	s := New(platformClient)
 
 	newTopology := state.Cluster{
-		Overview: state.Overview{
-			ServiceCount: 42,
+		Services: map[string]*state.Service{
+			"service-1@ns": {
+				Name:      "service-1",
+				Namespace: "default",
+			},
 		},
 	}
 
 	err := s.Write(context.Background(), newTopology)
 	require.Error(t, err)
-	assert.Equal(t, "", s.lastKnownVersion)
+	assert.EqualValues(t, 0, s.lastKnownVersion)
 
 	err = s.Write(context.Background(), newTopology)
 	require.Error(t, err)
-	assert.Equal(t, "", s.lastKnownVersion)
+	assert.EqualValues(t, 0, s.lastKnownVersion)
 
 	// Apply the same topology with a successful patch.
 	err = s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
-	assert.Equal(t, "version-4", s.lastKnownVersion)
+	assert.EqualValues(t, 4, s.lastKnownVersion)
 }
 
 func TestStore_Write_abortOnFetchFailure(t *testing.T) {
 	platformClient := newPlatformClientMock(t).
-		OnFetchTopology().TypedReturns(state.Cluster{}, "", errors.New("boom")).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{}, 0, errors.New("boom")).Once().
 		OnFetchTopology().
 		TypedReturns(state.Cluster{
-			Overview: state.Overview{ServiceCount: 1},
 			Services: map[string]*state.Service{
 				"service-1@ns": {Name: "service-1", Namespace: "ns", ExternalPorts: []int{8080}},
 			},
-		}, "version-1", nil).Once().
+		}, 1, nil).Once().
 		OnPatchTopology([]byte(removeSpaces(`{
 			"services": {
 				"service-1@ns": {
 					"annotations": {"key":"value"}
 				}
 			}
-		}`)), "version-1").TypedReturns("version-2", nil).Once().
+		}`)), 1).TypedReturns(2, nil).Once().
 		Parent
 
 	s := New(platformClient)
 
 	newTopology := state.Cluster{
-		Overview: state.Overview{
-			ServiceCount: 1,
-		},
 		Services: map[string]*state.Service{
 			"service-1@ns": {
 				Name:          "service-1",
@@ -599,45 +539,41 @@ func TestStore_Write_abortOnFetchFailure(t *testing.T) {
 
 	err := s.Write(context.Background(), newTopology)
 	require.Error(t, err)
-	assert.Equal(t, "", s.lastKnownVersion)
+	assert.EqualValues(t, 0, s.lastKnownVersion)
 
 	// Make sure that if the fetch didn't fail the next time it will patch the topology successfully.
 	err = s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
-	assert.Equal(t, "version-2", s.lastKnownVersion)
+	assert.EqualValues(t, 2, s.lastKnownVersion)
 }
 
 func TestStore_Write_giveUpOnRetryingWhenReachedBackoffLimit(t *testing.T) {
 	platformClient := newPlatformClientMock(t).
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-1", nil).Once().
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 2}}, "version-2", nil).Once().
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 3}}, "version-3", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-1").TypedReturns("", platform.APIError{Retryable: true}).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-2").TypedReturns("", platform.APIError{Retryable: true}).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-3").TypedReturns("", platform.APIError{Retryable: true}).Once().
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 1}}, "version-4", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-4").TypedReturns("", platform.APIError{Retryable: true}).Once().
-		OnFetchTopology().TypedReturns(state.Cluster{Overview: state.Overview{ServiceCount: 2}}, "version-5", nil).Once().
-		OnPatchTopology([]byte(`{"overview":{"serviceCount":42}}`), "version-5").TypedReturns("version-6", nil).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-1"}}}, 1, nil).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-2"}}}, 2, nil).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-3"}}}, 3, nil).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"name":"service-5"}}}`), 1).TypedReturns(0, platform.APIError{StatusCode: http.StatusConflict}).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"name":"service-5"}}}`), 2).TypedReturns(0, platform.APIError{StatusCode: http.StatusConflict}).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"name":"service-5"}}}`), 3).TypedReturns(0, platform.APIError{StatusCode: http.StatusConflict}).Once().
+		OnFetchTopology().TypedReturns(state.Cluster{Services: map[string]*state.Service{"service-1@ns": {Name: "service-4"}}}, 4, nil).Once().
+		OnPatchTopology([]byte(`{"services":{"service-1@ns":{"name":"service-5"}}}`), 4).TypedReturns(5, nil).Once().
 		Parent
 
 	s := New(platformClient)
-	s.backoff = &backoffMock{MaxRetries: 3}
+	s.maxPatchRetry = 3
 
 	newTopology := state.Cluster{
-		Overview: state.Overview{
-			ServiceCount: 42,
-		},
+		Services: map[string]*state.Service{"service-1@ns": {Name: "service-5"}},
 	}
 
 	err := s.Write(context.Background(), newTopology)
 	require.Error(t, err)
-	assert.Equal(t, "", s.lastKnownVersion)
+	assert.EqualValues(t, 0, s.lastKnownVersion)
 
 	// Apply the same topology with a successful patch.
 	err = s.Write(context.Background(), newTopology)
 	require.NoError(t, err)
-	assert.Equal(t, "version-6", s.lastKnownVersion)
+	assert.EqualValues(t, 5, s.lastKnownVersion)
 }
 
 func removeSpaces(s string) string {
@@ -646,22 +582,4 @@ func removeSpaces(s string) string {
 	s = strings.ReplaceAll(s, "\t", "")
 
 	return s
-}
-
-type backoffMock struct {
-	MaxRetries int
-	retries    int
-}
-
-func (b *backoffMock) NextBackOff() time.Duration {
-	if b.retries >= b.MaxRetries-1 {
-		return -1
-	}
-
-	b.retries++
-	return time.Millisecond
-}
-
-func (b *backoffMock) Reset() {
-	b.retries = 0
 }

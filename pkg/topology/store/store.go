@@ -23,9 +23,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+	"net/http"
 
-	"github.com/cenkalti/backoff/v4"
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/rs/zerolog/log"
 	"github.com/traefik/hub-agent-kubernetes/pkg/platform"
@@ -34,43 +33,41 @@ import (
 
 // PlatformClient is capable of interacting with the platform.
 type PlatformClient interface {
-	FetchTopology(ctx context.Context) (topology state.Cluster, version string, err error)
-	PatchTopology(ctx context.Context, patch []byte, lastKnownVersion string) (string, error)
+	FetchTopology(ctx context.Context) (topology state.Cluster, version int64, err error)
+	PatchTopology(ctx context.Context, patch []byte, lastKnownVersion int64) (int64, error)
 }
 
 // Store stores the topology on the platform.
 type Store struct {
-	platform PlatformClient
+	platform      PlatformClient
+	maxPatchRetry int
 
 	lastTopology     []byte
-	lastKnownVersion string
-	backoff          backoff.BackOff
+	lastKnownVersion int64
 }
 
 // New instantiates a new Store.
 func New(platformClient PlatformClient) *Store {
-	b := backoff.NewExponentialBackOff()
-	b.InitialInterval = time.Second
-	b.MaxElapsedTime = time.Minute
-
 	return &Store{
-		platform: platformClient,
-		backoff:  b,
+		platform:      platformClient,
+		maxPatchRetry: 5,
 	}
 }
 
 // Write writes the topology on the platform.
 func (s *Store) Write(ctx context.Context, st state.Cluster) error {
-	return backoff.RetryNotify(func() error {
-		if s.lastKnownVersion == "" {
+	retryCount := 0
+
+	for {
+		if s.lastKnownVersion == 0 {
 			topology, version, err := s.platform.FetchTopology(ctx)
 			if err != nil {
-				return backoff.Permanent(fmt.Errorf("fetch topology: %w", err))
+				return fmt.Errorf("fetch topology: %w", err)
 			}
 
 			s.lastTopology, err = json.Marshal(topology)
 			if err != nil {
-				return backoff.Permanent(fmt.Errorf("marshal topology: %w", err))
+				return fmt.Errorf("marshal topology: %w", err)
 			}
 
 			s.lastKnownVersion = version
@@ -78,7 +75,7 @@ func (s *Store) Write(ctx context.Context, st state.Cluster) error {
 
 		patch, newTopology, err := s.buildPatch(s.lastTopology, st)
 		if err != nil {
-			return backoff.Permanent(fmt.Errorf("build topology patch: %w", err))
+			return fmt.Errorf("build topology patch: %w", err)
 		}
 		if patch == nil {
 			return nil
@@ -91,14 +88,17 @@ func (s *Store) Write(ctx context.Context, st state.Cluster) error {
 		}
 
 		var apiErr platform.APIError
-		if !errors.As(err, &apiErr) || !apiErr.Retryable {
-			return backoff.Permanent(fmt.Errorf("patch topology: %w", err))
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusConflict {
+			return fmt.Errorf("patch topology: %w", err)
 		}
 
-		return err
-	}, s.backoff, func(err error, retryIn time.Duration) {
-		log.Ctx(ctx).Warn().Err(err).Dur("retry_in", retryIn).Msg("Unable to patch topology")
-	})
+		retryCount++
+		if retryCount >= s.maxPatchRetry {
+			return errors.New("too many retries")
+		}
+
+		log.Ctx(ctx).Warn().Err(err).Msg("Unable to patch topology")
+	}
 }
 
 func (s *Store) buildPatch(lastTopology []byte, st state.Cluster) ([]byte, []byte, error) {

@@ -137,7 +137,7 @@ func setupClient(t *testing.T, cfg Config) *Client {
 
 	client, err := NewClient(srv.URL, "123")
 	require.NoError(t, err)
-	client.retryableHTTPClient = srv.Client()
+	client.httpClient = srv.Client()
 
 	return client
 }

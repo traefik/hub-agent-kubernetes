@@ -117,10 +117,6 @@ func (f *Fetcher) FetchState() (*Cluster, error) {
 		return nil, err
 	}
 
-	cluster.Overview = Overview{
-		ServiceCount: len(cluster.Services),
-	}
-
 	return &cluster, nil
 }
 

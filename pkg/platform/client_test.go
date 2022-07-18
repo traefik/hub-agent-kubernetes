@@ -26,6 +26,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -104,7 +105,7 @@ func TestClient_Link(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			hubClusterID, err := c.Link(context.Background(), "1")
 			test.wantErr(t, err)
@@ -173,7 +174,7 @@ func TestClient_GetConfig(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			agentCfg, err := c.GetConfig(context.Background())
 			test.wantErr(t, err)
@@ -238,7 +239,7 @@ func TestClient_Ping(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			err = c.Ping(context.Background())
 			test.wantErr(t, err)
@@ -302,7 +303,7 @@ func TestClient_ListVerifiedDomains(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			domains, err := c.ListVerifiedDomains(context.Background())
 			test.wantErr(t, err)
@@ -405,7 +406,7 @@ func TestClient_CreateEdgeIngress(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			createdEdgeIngress, err := c.CreateEdgeIngress(context.Background(), test.createReq)
 			test.wantErr(t, err)
@@ -526,7 +527,7 @@ func TestClient_UpdateEdgeIngress(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			updatedEdgeIngress, err := c.UpdateEdgeIngress(context.Background(), test.namespace, test.name, test.version, test.updateReq)
 			test.wantErr(t, err)
@@ -600,7 +601,7 @@ func TestClient_DeleteEdgeIngress(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			err = c.DeleteEdgeIngress(context.Background(), test.namespace, test.name, test.version)
 			test.wantErr(t, err)
@@ -706,7 +707,7 @@ func TestClient_CreateACP(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			createdACP, err := c.CreateACP(context.Background(), test.policy)
 			test.wantErr(t, err)
@@ -817,7 +818,7 @@ func TestClient_UpdateACP(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			updatedACP, err := c.UpdateACP(context.Background(), "oldVersion", test.policy)
 			test.wantErr(t, err)
@@ -885,7 +886,7 @@ func TestClient_DeleteACP(t *testing.T) {
 
 			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			err = c.DeleteACP(context.Background(), "oldVersion", test.name)
 			test.wantErr(t, err)
@@ -938,7 +939,7 @@ func TestClient_GetEdgeIngress(t *testing.T) {
 
 	c, err := NewClient(srv.URL, testToken)
 	require.NoError(t, err)
-	c.retryableHTTPClient = srv.Client()
+	c.httpClient = srv.Client()
 
 	gotEdgeIngresses, err := c.GetEdgeIngresses(context.Background())
 	require.NoError(t, err)
@@ -1018,7 +1019,7 @@ func TestClient_GetCertificate(t *testing.T) {
 
 			c, err := NewClient(srv.URL, "123")
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			gotCert, err := c.GetCertificate(context.Background())
 			if test.wantErr != nil {
@@ -1038,7 +1039,7 @@ func TestClient_FetchTopology(t *testing.T) {
 		desc         string
 		statusCode   int
 		resp         []byte
-		wantVersion  string
+		wantVersion  int64
 		wantTopology state.Cluster
 		wantErr      error
 	}{
@@ -1046,7 +1047,7 @@ func TestClient_FetchTopology(t *testing.T) {
 			desc:       "fetch topology succeed",
 			statusCode: http.StatusOK,
 			resp: []byte(`{
-				"version": "version-1",
+				"version": 1,
 				"topology": {
 					"overview": {
 						"serviceCount": 1
@@ -1063,11 +1064,8 @@ func TestClient_FetchTopology(t *testing.T) {
 					}
 				}
 			}`),
-			wantVersion: "version-1",
+			wantVersion: 1,
 			wantTopology: state.Cluster{
-				Overview: state.Overview{
-					ServiceCount: 1,
-				},
 				Services: map[string]*state.Service{
 					"service-1@ns": {
 						Name:          "service-1",
@@ -1127,7 +1125,7 @@ func TestClient_FetchTopology(t *testing.T) {
 
 			c, err := NewClient(srv.URL, "123")
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			gotTopology, gotVersion, err := c.FetchTopology(context.Background())
 			if test.wantErr != nil {
@@ -1148,9 +1146,9 @@ func TestClient_PatchTopology(t *testing.T) {
 		desc             string
 		statusCode       int
 		patch            []byte
-		lastKnownVersion string
+		lastKnownVersion int64
 		resp             []byte
-		wantVersion      string
+		wantVersion      int64
 		wantErr          error
 	}{
 		{
@@ -1164,39 +1162,17 @@ func TestClient_PatchTopology(t *testing.T) {
 					}
 				}
 			}`),
-			lastKnownVersion: "version-1",
-			resp:             []byte(`{"version": "version-2"}`),
-			wantVersion:      "version-2",
+			lastKnownVersion: 1,
+			resp:             []byte(`{"version": 2}`),
+			wantVersion:      2,
 		},
 		{
 			desc:             "patch conflict",
 			statusCode:       http.StatusConflict,
 			patch:            []byte(`{"services": {"service-1@ns": null}}`),
-			lastKnownVersion: "version-1",
+			lastKnownVersion: 1,
 			wantErr: &APIError{
 				StatusCode: http.StatusConflict,
-				Retryable:  true,
-				Message:    "error",
-			},
-		},
-		{
-			desc:             "patch bad request",
-			statusCode:       http.StatusBadRequest,
-			lastKnownVersion: "version-1",
-			wantErr: &APIError{
-				StatusCode: http.StatusBadRequest,
-				Retryable:  false,
-				Message:    "error",
-			},
-		},
-		{
-			desc:             "patch unprocessable entity",
-			statusCode:       http.StatusUnprocessableEntity,
-			patch:            []byte(`{"services": {"service-1@ns": abcd}}`),
-			lastKnownVersion: "version-1",
-			wantErr: &APIError{
-				StatusCode: http.StatusUnprocessableEntity,
-				Retryable:  false,
 				Message:    "error",
 			},
 		},
@@ -1205,7 +1181,6 @@ func TestClient_PatchTopology(t *testing.T) {
 			statusCode: http.StatusInternalServerError,
 			wantErr: &APIError{
 				StatusCode: http.StatusInternalServerError,
-				Retryable:  true,
 				Message:    "error",
 			},
 		},
@@ -1236,7 +1211,7 @@ func TestClient_PatchTopology(t *testing.T) {
 					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
 					return
 				}
-				if req.Header.Get("Last-Known-Version") != test.lastKnownVersion {
+				if req.Header.Get("Last-Known-Version") != strconv.FormatInt(test.lastKnownVersion, 10) {
 					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
 					return
 				}
@@ -1278,7 +1253,7 @@ func TestClient_PatchTopology(t *testing.T) {
 
 			c, err := NewClient(srv.URL, "456")
 			require.NoError(t, err)
-			c.retryableHTTPClient = srv.Client()
+			c.httpClient = srv.Client()
 
 			gotVersion, err := c.PatchTopology(context.Background(), test.patch, test.lastKnownVersion)
 			if test.wantErr != nil {
@@ -1288,7 +1263,7 @@ func TestClient_PatchTopology(t *testing.T) {
 			}
 
 			assert.Equal(t, 1, callCount)
-			assert.Equal(t, test.wantVersion, gotVersion)
+			assert.EqualValues(t, test.wantVersion, gotVersion)
 		})
 	}
 }

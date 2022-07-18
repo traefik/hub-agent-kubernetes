@@ -26,11 +26,11 @@ func newPlatformClientMock(tb testing.TB) *platformClientMock {
 	return m
 }
 
-func (_m *platformClientMock) FetchTopology(_ context.Context) (state.Cluster, string, error) {
+func (_m *platformClientMock) FetchTopology(_ context.Context) (state.Cluster, int64, error) {
 	_ret := _m.Called()
 
 	topology, _ := _ret.Get(0).(state.Cluster)
-	version := _ret.String(1)
+	version, _ := _ret.Get(1).(int64)
 	err := _ret.Error(2)
 
 	return topology, version, err
@@ -89,12 +89,12 @@ func (_c *platformClientFetchTopologyCall) Maybe() *platformClientFetchTopologyC
 	return _c
 }
 
-func (_c *platformClientFetchTopologyCall) TypedReturns(a state.Cluster, b string, c error) *platformClientFetchTopologyCall {
+func (_c *platformClientFetchTopologyCall) TypedReturns(a state.Cluster, b int64, c error) *platformClientFetchTopologyCall {
 	_c.Call = _c.Return(a, b, c)
 	return _c
 }
 
-func (_c *platformClientFetchTopologyCall) ReturnsFn(fn func() (state.Cluster, string, error)) *platformClientFetchTopologyCall {
+func (_c *platformClientFetchTopologyCall) ReturnsFn(fn func() (state.Cluster, int64, error)) *platformClientFetchTopologyCall {
 	_c.Call = _c.Return(fn)
 	return _c
 }
@@ -110,7 +110,7 @@ func (_c *platformClientFetchTopologyCall) OnFetchTopology() *platformClientFetc
 	return _c.Parent.OnFetchTopology()
 }
 
-func (_c *platformClientFetchTopologyCall) OnPatchTopology(patch []byte, lastKnownVersion string) *platformClientPatchTopologyCall {
+func (_c *platformClientFetchTopologyCall) OnPatchTopology(patch []byte, lastKnownVersion int64) *platformClientPatchTopologyCall {
 	return _c.Parent.OnPatchTopology(patch, lastKnownVersion)
 }
 
@@ -122,20 +122,20 @@ func (_c *platformClientFetchTopologyCall) OnPatchTopologyRaw(patch interface{},
 	return _c.Parent.OnPatchTopologyRaw(patch, lastKnownVersion)
 }
 
-func (_m *platformClientMock) PatchTopology(_ context.Context, patch []byte, lastKnownVersion string) (string, error) {
+func (_m *platformClientMock) PatchTopology(_ context.Context, patch []byte, lastKnownVersion int64) (int64, error) {
 	_ret := _m.Called(patch, lastKnownVersion)
 
-	if _rf, ok := _ret.Get(0).(func([]byte, string) (string, error)); ok {
+	if _rf, ok := _ret.Get(0).(func([]byte, int64) (int64, error)); ok {
 		return _rf(patch, lastKnownVersion)
 	}
 
-	_ra0 := _ret.String(0)
+	_ra0, _ := _ret.Get(0).(int64)
 	_rb1 := _ret.Error(1)
 
 	return _ra0, _rb1
 }
 
-func (_m *platformClientMock) OnPatchTopology(patch []byte, lastKnownVersion string) *platformClientPatchTopologyCall {
+func (_m *platformClientMock) OnPatchTopology(patch []byte, lastKnownVersion int64) *platformClientPatchTopologyCall {
 	return &platformClientPatchTopologyCall{Call: _m.Mock.On("PatchTopology", patch, lastKnownVersion), Parent: _m}
 }
 
@@ -188,20 +188,20 @@ func (_c *platformClientPatchTopologyCall) Maybe() *platformClientPatchTopologyC
 	return _c
 }
 
-func (_c *platformClientPatchTopologyCall) TypedReturns(a string, b error) *platformClientPatchTopologyCall {
+func (_c *platformClientPatchTopologyCall) TypedReturns(a int64, b error) *platformClientPatchTopologyCall {
 	_c.Call = _c.Return(a, b)
 	return _c
 }
 
-func (_c *platformClientPatchTopologyCall) ReturnsFn(fn func([]byte, string) (string, error)) *platformClientPatchTopologyCall {
+func (_c *platformClientPatchTopologyCall) ReturnsFn(fn func([]byte, int64) (int64, error)) *platformClientPatchTopologyCall {
 	_c.Call = _c.Return(fn)
 	return _c
 }
 
-func (_c *platformClientPatchTopologyCall) TypedRun(fn func([]byte, string)) *platformClientPatchTopologyCall {
+func (_c *platformClientPatchTopologyCall) TypedRun(fn func([]byte, int64)) *platformClientPatchTopologyCall {
 	_c.Call = _c.Call.Run(func(args mock.Arguments) {
 		_patch, _ := args.Get(0).([]byte)
-		_lastKnownVersion := args.String(1)
+		_lastKnownVersion, _ := args.Get(1).(int64)
 		fn(_patch, _lastKnownVersion)
 	})
 	return _c
@@ -211,7 +211,7 @@ func (_c *platformClientPatchTopologyCall) OnFetchTopology() *platformClientFetc
 	return _c.Parent.OnFetchTopology()
 }
 
-func (_c *platformClientPatchTopologyCall) OnPatchTopology(patch []byte, lastKnownVersion string) *platformClientPatchTopologyCall {
+func (_c *platformClientPatchTopologyCall) OnPatchTopology(patch []byte, lastKnownVersion int64) *platformClientPatchTopologyCall {
 	return _c.Parent.OnPatchTopology(patch, lastKnownVersion)
 }
 

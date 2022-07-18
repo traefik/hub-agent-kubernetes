@@ -24,14 +24,8 @@ import (
 
 // Cluster describes a Cluster.
 type Cluster struct {
-	Overview  Overview            `json:"overview"`
 	Services  map[string]*Service `json:"services"`
 	Ingresses map[string]*Ingress `json:"-"`
-}
-
-// Overview represents an overview of the cluster resources.
-type Overview struct {
-	ServiceCount int `json:"serviceCount"`
 }
 
 // Service describes a Service.
