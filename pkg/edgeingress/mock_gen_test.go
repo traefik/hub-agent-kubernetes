@@ -25,7 +25,7 @@ func newPlatformClientMock(tb testing.TB) *platformClientMock {
 	return m
 }
 
-func (_m *platformClientMock) GetCertificate(_ context.Context) (Certificate, error) {
+func (_m *platformClientMock) GetWildcardCertificate(_ context.Context) (Certificate, error) {
 	_ret := _m.Called()
 
 	_ra0, _ := _ret.Get(0).(Certificate)
@@ -35,11 +35,11 @@ func (_m *platformClientMock) GetCertificate(_ context.Context) (Certificate, er
 }
 
 func (_m *platformClientMock) OnGetCertificate() *platformClientGetCertificateCall {
-	return &platformClientGetCertificateCall{Call: _m.Mock.On("GetCertificate"), Parent: _m}
+	return &platformClientGetCertificateCall{Call: _m.Mock.On("GetWildcardCertificate"), Parent: _m}
 }
 
 func (_m *platformClientMock) OnGetCertificateRaw() *platformClientGetCertificateCall {
-	return &platformClientGetCertificateCall{Call: _m.Mock.On("GetCertificate"), Parent: _m}
+	return &platformClientGetCertificateCall{Call: _m.Mock.On("GetWildcardCertificate"), Parent: _m}
 }
 
 type platformClientGetCertificateCall struct {

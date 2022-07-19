@@ -1023,7 +1023,7 @@ func Test_GetCertificate(t *testing.T) {
 			require.NoError(t, err)
 			c.httpClient = srv.Client()
 
-			gotCert, err := c.GetCertificate(context.Background())
+			gotCert, err := c.GetWildcardCertificate(context.Background())
 			if test.wantErr != nil {
 				require.ErrorAs(t, err, test.wantErr)
 			} else {

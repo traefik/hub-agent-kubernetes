@@ -49,7 +49,7 @@ const (
 // PlatformClient for the EdgeIngress service.
 type PlatformClient interface {
 	GetEdgeIngresses(ctx context.Context) ([]EdgeIngress, error)
-	GetCertificate(ctx context.Context) (Certificate, error)
+	GetWildcardCertificate(ctx context.Context) (Certificate, error)
 	GetCertificateByDomains(ctx context.Context, domains []string) (Certificate, error)
 }
 
@@ -127,7 +127,7 @@ func (w *Watcher) Run(ctx context.Context) {
 }
 
 func (w *Watcher) syncCertificate(ctx context.Context) error {
-	certificate, err := w.client.GetCertificate(ctx)
+	certificate, err := w.client.GetWildcardCertificate(ctx)
 	if err != nil {
 		return fmt.Errorf("get certificate: %w", err)
 	}

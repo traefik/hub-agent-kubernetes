@@ -633,8 +633,8 @@ func (c *Client) GetEdgeIngresses(ctx context.Context) ([]edgeingress.EdgeIngres
 	return edgeIngresses, nil
 }
 
-// GetCertificate gets a certificate for the workspace.
-func (c *Client) GetCertificate(ctx context.Context) (edgeingress.Certificate, error) {
+// GetWildcardCertificate gets a certificate for the workspace.
+func (c *Client) GetWildcardCertificate(ctx context.Context) (edgeingress.Certificate, error) {
 	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "wildcard-certificate"))
 	if err != nil {
 		return edgeingress.Certificate{}, fmt.Errorf("parse endpoint: %w", err)
