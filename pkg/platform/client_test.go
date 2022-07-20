@@ -997,7 +997,7 @@ func TestClient_GetCertificate(t *testing.T) {
 					return
 				}
 
-				if req.Header.Get("Authorization") != "Bearer 123" {
+				if req.Header.Get("Authorization") != "Bearer "+testToken {
 					http.Error(rw, "Invalid token", http.StatusUnauthorized)
 					return
 				}
@@ -1017,7 +1017,7 @@ func TestClient_GetCertificate(t *testing.T) {
 			srv := httptest.NewServer(mux)
 			t.Cleanup(srv.Close)
 
-			c, err := NewClient(srv.URL, "123")
+			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
 			c.httpClient = srv.Client()
 
