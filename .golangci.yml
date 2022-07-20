@@ -171,6 +171,7 @@ issues:
         - gochecknoinits
         - gochecknoglobals
         - maintidx
+        - nosnakecase
     - path: pkg/crd/api/.*
       linters:
         - tagliatelle
@@ -211,3 +212,6 @@ issues:
     - path: pkg/platform/client_test.go
       linters:
         - gocognit
+    - path: cmd/agent/controller.go
+      linters:
+        - nosnakecase
