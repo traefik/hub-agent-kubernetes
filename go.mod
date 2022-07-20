@@ -1,11 +1,11 @@
 module github.com/traefik/hub-agent-kubernetes
 
-go 1.17
+go 1.18
 
 require (
 	github.com/abbot/go-http-auth v0.4.0
-	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/ettle/strcase v0.1.1
+	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/go-chi/chi/v5 v5.0.7
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/gorilla/websocket v1.5.0
@@ -13,7 +13,6 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.1
 	github.com/hashicorp/go-version v1.5.0
 	github.com/hashicorp/yamux v0.0.0-20211028200310-0bc27b27de87
-	github.com/ldez/go-git-cmd-wrapper/v2 v2.3.0
 	github.com/pquerna/cachecontrol v0.1.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.35.0
@@ -39,7 +38,6 @@ require (
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/evanphx/json-patch v4.9.0+incompatible // indirect
 	github.com/form3tech-oss/jwt-go v3.2.2+incompatible // indirect
 	github.com/go-logr/logr v0.4.0 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect

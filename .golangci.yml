@@ -171,6 +171,7 @@ issues:
         - gochecknoinits
         - gochecknoglobals
         - maintidx
+        - nosnakecase
     - path: pkg/crd/api/.*
       linters:
         - tagliatelle
@@ -180,22 +181,11 @@ issues:
     - path: pkg/acp/admission/reviewer/reviewer.go
       linters:
         - goconst
-    - path: pkg/topology/state/fetcher.go
-      text: "Function 'watchAll' has too many statements"
-      linters:
-        - funlen
-    - path: pkg/topology/state/fetcher.go
-      text: "cyclomatic complexity 19 of func `watchAll` is high"
-      linters:
-        - gocyclo
     - path: pkg/metrics/protocol/protocol.go
       text: '[[:alpha:]]+V\dSchema is a global variable'
     # False positive.
     - path: pkg/metrics/store_test.go
       text: 'Multiplication of durations: `-1 \* time\.Duration\(n\) \* gran`'
-    # Keep for historical reason.
-    - path: pkg/topology/state/cluster.go
-      text: "json\\(camel\\): got '(metricsURLs)' want '(metricsUrLs)'"
     # Reducing cyclomatic complexity would reduce readability.
     - path: pkg/acp/admission/reviewer/traefik_ingress_route.go
       linters:
@@ -219,3 +209,9 @@ issues:
     - path: pkg/crd/api/hub/v1alpha1/edge_ingress.go
       linters:
         - gosec # sha1 is not used to encrypt data, no security issue
+    - path: pkg/platform/client_test.go
+      linters:
+        - gocognit
+    - path: cmd/agent/controller.go
+      linters:
+        - nosnakecase

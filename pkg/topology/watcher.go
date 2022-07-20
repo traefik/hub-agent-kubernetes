@@ -73,6 +73,9 @@ func (w *Watcher) Start(ctx context.Context) {
 				log.Error().Err(err).Msg("create state")
 				continue
 			}
+			if s == nil {
+				continue
+			}
 
 			w.listenersMu.Lock()
 			for _, l := range w.listeners {
@@ -80,7 +83,7 @@ func (w *Watcher) Start(ctx context.Context) {
 			}
 			w.listenersMu.Unlock()
 
-			if err = w.store.Write(ctx, s); err != nil {
+			if err = w.store.Write(ctx, *s); err != nil {
 				log.Error().Err(err).Msg("commit cluster state changes")
 			}
 		}

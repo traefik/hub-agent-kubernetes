@@ -24,7 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func (f *Fetcher) getIngresses(clusterID string) (map[string]*Ingress, error) {
+// ControllerTypeTraefik is the controller value for an Ingress Class handled by Traefik.
+const ControllerTypeTraefik = "traefik.io/ingress-controller"
+
+func (f *Fetcher) getIngresses() (map[string]*Ingress, error) {
 	ingresses, err := f.fetchIngresses()
 	if err != nil {
 		return nil, err
@@ -45,7 +48,6 @@ func (f *Fetcher) getIngresses(clusterID string) (map[string]*Ingress, error) {
 				Namespace: ingress.Namespace,
 			},
 			IngressMeta: IngressMeta{
-				ClusterID:      clusterID,
 				ControllerType: getControllerType(ingress, ingressClasses),
 				Annotations:    sanitizeAnnotations(ingress.Annotations),
 			},
@@ -60,6 +62,29 @@ func (f *Fetcher) getIngresses(clusterID string) (map[string]*Ingress, error) {
 	}
 
 	return result, nil
+}
+
+func (f *Fetcher) fetchIngressClasses() ([]*netv1.IngressClass, error) {
+	ingressClasses, err := f.k8s.Networking().V1().IngressClasses().Lister().List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	v1beta1IngressClasses, err := f.k8s.Networking().V1beta1().IngressClasses().Lister().List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ingressClass := range v1beta1IngressClasses {
+		networking, err := marshalToIngressClassNetworkingV1(ingressClass)
+		if err != nil {
+			return nil, err
+		}
+
+		ingressClasses = append(ingressClasses, networking)
+	}
+
+	return ingressClasses, nil
 }
 
 func (f *Fetcher) fetchIngresses() ([]*netv1.Ingress, error) {
@@ -142,7 +167,7 @@ func getControllerType(ingress *netv1.Ingress, ingressClasses []*netv1.IngressCl
 
 	switch ingressClass.Spec.Controller {
 	case ControllerTypeTraefik:
-		return IngressControllerTypeTraefik
+		return "traefik"
 
 	default:
 		return ingressClass.Spec.Controller
@@ -224,6 +249,21 @@ func marshalToIngressNetworkingV1(ing *netv1beta1.Ingress) (*netv1.Ingress, erro
 
 	ni := &netv1.Ingress{}
 	if err := ni.Unmarshal(data); err != nil {
+		return nil, err
+	}
+
+	return ni, nil
+}
+
+func marshalToIngressClassNetworkingV1(ing *netv1beta1.IngressClass) (*netv1.IngressClass, error) {
+	data, err := ing.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	ni := &netv1.IngressClass{}
+	err = ni.Unmarshal(data)
+	if err != nil {
 		return nil, err
 	}
 

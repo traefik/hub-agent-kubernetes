@@ -23,8 +23,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	hubkubemock "github.com/traefik/hub-agent-kubernetes/pkg/crd/generated/client/hub/clientset/versioned/fake"
-	traefikkubemock "github.com/traefik/hub-agent-kubernetes/pkg/crd/generated/client/traefik/clientset/versioned/fake"
 	netv1 "k8s.io/api/networking/v1"
 	netv1beta1 "k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,10 +63,8 @@ func Test_watchAll_handlesUnsupportedVersions(t *testing.T) {
 			t.Parallel()
 
 			kubeClient := kubemock.NewSimpleClientset()
-			hubClient := hubkubemock.NewSimpleClientset()
-			traefikClient := traefikkubemock.NewSimpleClientset()
 
-			_, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, test.serverVersion, "cluster-id")
+			_, err := watchAll(context.Background(), kubeClient, test.serverVersion)
 
 			test.wantErr(t, err)
 		})
@@ -92,9 +88,6 @@ func Test_watchAll_handlesAllIngressAPIVersions(t *testing.T) {
 						Name:      "myIngress_netv1beta1",
 						Namespace: "myns",
 					},
-					IngressMeta: IngressMeta{
-						ClusterID: "cluster-id",
-					},
 				},
 			},
 		},
@@ -108,9 +101,6 @@ func Test_watchAll_handlesAllIngressAPIVersions(t *testing.T) {
 						Group:     "networking.k8s.io",
 						Name:      "myIngress_netv1beta1",
 						Namespace: "myns",
-					},
-					IngressMeta: IngressMeta{
-						ClusterID: "cluster-id",
 					},
 				},
 			},
@@ -126,9 +116,6 @@ func Test_watchAll_handlesAllIngressAPIVersions(t *testing.T) {
 						Name:      "myIngress_netv1beta1",
 						Namespace: "myns",
 					},
-					IngressMeta: IngressMeta{
-						ClusterID: "cluster-id",
-					},
 				},
 			},
 		},
@@ -143,9 +130,6 @@ func Test_watchAll_handlesAllIngressAPIVersions(t *testing.T) {
 						Name:      "myIngress_netv1",
 						Namespace: "myns",
 					},
-					IngressMeta: IngressMeta{
-						ClusterID: "cluster-id",
-					},
 				},
 			},
 		},
@@ -159,9 +143,6 @@ func Test_watchAll_handlesAllIngressAPIVersions(t *testing.T) {
 						Group:     "networking.k8s.io",
 						Name:      "myIngress_netv1",
 						Namespace: "myns",
-					},
-					IngressMeta: IngressMeta{
-						ClusterID: "cluster-id",
 					},
 				},
 			},
@@ -189,44 +170,14 @@ func Test_watchAll_handlesAllIngressAPIVersions(t *testing.T) {
 			}
 
 			kubeClient := kubemock.NewSimpleClientset(k8sObjects...)
-			hubClient := hubkubemock.NewSimpleClientset()
-			traefikClient := traefikkubemock.NewSimpleClientset()
 
-			f, err := watchAll(context.Background(), kubeClient, hubClient, traefikClient, test.serverVersion, "cluster-id")
+			f, err := watchAll(context.Background(), kubeClient, test.serverVersion)
 			require.NoError(t, err)
 
-			got, err := f.getIngresses("cluster-id")
+			got, err := f.getIngresses()
 			require.NoError(t, err)
 
 			assert.Equal(t, test.want, got)
 		})
 	}
-}
-
-func Test_getOverview(t *testing.T) {
-	state := Cluster{
-		Ingresses: map[string]*Ingress{
-			"name@namespace.kind.group": {},
-		},
-		IngressRoutes: map[string]*IngressRoute{
-			"name@namespace.kind.group": {},
-		},
-		Services: map[string]*Service{
-			"name@namespace": {},
-		},
-		IngressControllers: map[string]*IngressController{
-			"name@namespace":  {Type: IngressControllerTypeTraefik},
-			"name2@namespace": {Type: IngressControllerTypeTraefik},
-		},
-	}
-
-	overview := getOverview(&state)
-
-	want := Overview{
-		IngressCount:           2,
-		ServiceCount:           1,
-		IngressControllerTypes: []string{IngressControllerTypeTraefik},
-	}
-
-	assert.Equal(t, want, overview)
 }

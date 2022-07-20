@@ -163,10 +163,7 @@ func (m *Manager) send(ctx context.Context, tbls []string) error {
 
 func (m *Manager) startScraper(ctx context.Context) {
 	mtrcs, err := m.scraper.Scrape(ctx, ParserTraefik, m.traefikURL, ScrapeState{
-		Ingresses:           m.getIngresses(),
-		IngressRoutes:       m.getIngressRoutes(),
-		ServiceIngresses:    m.getSvcIngresses(),
-		TraefikServiceNames: m.getTraefikServiceNames(),
+		Ingresses: m.getIngresses(),
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("Unable to scrape metrics")
@@ -186,10 +183,7 @@ func (m *Manager) startScraper(ctx context.Context) {
 
 		case <-tick.C:
 			mtrcs, err = m.scraper.Scrape(ctx, ParserTraefik, m.traefikURL, ScrapeState{
-				Ingresses:           m.getIngresses(),
-				IngressRoutes:       m.getIngressRoutes(),
-				ServiceIngresses:    m.getSvcIngresses(),
-				TraefikServiceNames: m.getTraefikServiceNames(),
+				Ingresses: m.getIngresses(),
 			})
 			if err != nil {
 				log.Error().Err(err).Msg("Unable to scrape metrics")
@@ -218,27 +212,6 @@ func (m *Manager) startScraper(ctx context.Context) {
 	}
 }
 
-func (m *Manager) getSvcIngresses() map[string][]string {
-	cluster := m.state.Load().(*state.Cluster)
-
-	svcIngresses := map[string][]string{}
-	for ingrName, ingr := range cluster.Ingresses {
-		for _, svc := range ingr.Services {
-			ingrs := svcIngresses[svc]
-			ingrs = append(ingrs, ingrName)
-			svcIngresses[svc] = ingrs
-		}
-	}
-
-	return svcIngresses
-}
-
-func (m *Manager) getTraefikServiceNames() map[string]string {
-	cluster := m.state.Load().(*state.Cluster)
-
-	return cluster.TraefikServiceNames
-}
-
 func (m *Manager) getIngresses() map[string]struct{} {
 	cluster := m.state.Load().(*state.Cluster)
 
@@ -248,15 +221,4 @@ func (m *Manager) getIngresses() map[string]struct{} {
 	}
 
 	return ingresses
-}
-
-func (m *Manager) getIngressRoutes() map[string]struct{} {
-	cluster := m.state.Load().(*state.Cluster)
-
-	ingRoutes := make(map[string]struct{}, len(cluster.IngressRoutes))
-	for name := range cluster.IngressRoutes {
-		ingRoutes[name] = struct{}{}
-	}
-
-	return ingRoutes
 }

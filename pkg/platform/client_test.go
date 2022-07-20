@@ -19,12 +19,14 @@ package platform
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -34,6 +36,7 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/jwt"
 	hubv1alpha1 "github.com/traefik/hub-agent-kubernetes/pkg/crd/api/hub/v1alpha1"
 	"github.com/traefik/hub-agent-kubernetes/pkg/edgeingress"
+	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -87,7 +90,7 @@ func TestClient_Link(t *testing.T) {
 					return
 				}
 
-				if !bytes.Equal([]byte(`{"kubeId":"1","platform":"kubernetes"}`), b) {
+				if !bytes.Equal([]byte(`{"kubeId":"1","platform":"kubernetes","version":"dev"}`), b) {
 					http.Error(rw, fmt.Sprintf("invalid body: %s", string(b)), http.StatusBadRequest)
 					return
 				}
@@ -125,11 +128,6 @@ func TestClient_GetConfig(t *testing.T) {
 			desc:             "get config succeeds",
 			returnStatusCode: http.StatusOK,
 			wantConfig: Config{
-				Topology: TopologyConfig{
-					GitProxyHost: "git-proxy-host",
-					GitOrgName:   "git-org-name",
-					GitRepoName:  "git-repo-name",
-				},
 				Metrics: MetricsConfig{
 					Interval: time.Minute,
 					Tables:   []string{"1m", "10m"},
@@ -956,7 +954,7 @@ func assertErrorIs(wantErr error) assert.ErrorAssertionFunc {
 	}
 }
 
-func Test_GetCertificate(t *testing.T) {
+func TestClient_GetCertificate(t *testing.T) {
 	tests := []struct {
 		desc       string
 		statusCode int
@@ -999,7 +997,7 @@ func Test_GetCertificate(t *testing.T) {
 					return
 				}
 
-				if req.Header.Get("Authorization") != "Bearer 123" {
+				if req.Header.Get("Authorization") != "Bearer "+testToken {
 					http.Error(rw, "Invalid token", http.StatusUnauthorized)
 					return
 				}
@@ -1019,7 +1017,7 @@ func Test_GetCertificate(t *testing.T) {
 			srv := httptest.NewServer(mux)
 			t.Cleanup(srv.Close)
 
-			c, err := NewClient(srv.URL, "123")
+			c, err := NewClient(srv.URL, testToken)
 			require.NoError(t, err)
 			c.httpClient = srv.Client()
 
@@ -1115,6 +1113,240 @@ func Test_GetCertificateByDomain(t *testing.T) {
 
 			assert.Equal(t, 1, callCount)
 			assert.Equal(t, test.wantCert, gotCert)
+		})
+	}
+}
+
+func TestClient_FetchTopology(t *testing.T) {
+	tests := []struct {
+		desc         string
+		statusCode   int
+		resp         []byte
+		wantVersion  int64
+		wantTopology state.Cluster
+		wantErr      error
+	}{
+		{
+			desc:       "fetch topology succeed",
+			statusCode: http.StatusOK,
+			resp: []byte(`{
+				"version": 1,
+				"topology": {
+					"overview": {
+						"serviceCount": 1
+					},
+					"services": {
+						"service-1@ns": {
+							"name": "service-1",
+							"namespace": "ns",
+							"type": "ClusterIP",
+							"annotations": {"key": "value"},
+							"externalIps": ["10.10.10.10"],
+							"externalPorts": [8080, 8081]
+						}
+					}
+				}
+			}`),
+			wantVersion: 1,
+			wantTopology: state.Cluster{
+				Services: map[string]*state.Service{
+					"service-1@ns": {
+						Name:          "service-1",
+						Namespace:     "ns",
+						Type:          "ClusterIP",
+						Annotations:   map[string]string{"key": "value"},
+						ExternalIPs:   []string{"10.10.10.10"},
+						ExternalPorts: []int{8080, 8081},
+					},
+				},
+			},
+		},
+		{
+			desc:       "fetch topology unexpected error",
+			statusCode: http.StatusTeapot,
+			wantErr: &APIError{
+				StatusCode: http.StatusTeapot,
+				Message:    "error",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			var callCount int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/topology", func(rw http.ResponseWriter, req *http.Request) {
+				callCount++
+
+				if req.Method != http.MethodGet {
+					http.Error(rw, fmt.Sprintf("unsupported method: %s", req.Method), http.StatusMethodNotAllowed)
+					return
+				}
+
+				if req.Header.Get("Authorization") != "Bearer 123" {
+					http.Error(rw, "Invalid token", http.StatusUnauthorized)
+					return
+				}
+
+				rw.WriteHeader(test.statusCode)
+
+				switch test.statusCode {
+				case http.StatusOK:
+					_, _ = rw.Write(test.resp)
+				default:
+					_ = json.NewEncoder(rw).Encode(APIError{Message: "error"})
+				}
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			c, err := NewClient(srv.URL, "123")
+			require.NoError(t, err)
+			c.httpClient = srv.Client()
+
+			gotTopology, gotVersion, err := c.FetchTopology(context.Background())
+			if test.wantErr != nil {
+				require.ErrorAs(t, err, test.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, 1, callCount)
+			assert.Equal(t, test.wantVersion, gotVersion)
+			assert.Equal(t, test.wantTopology, gotTopology)
+		})
+	}
+}
+
+func TestClient_PatchTopology(t *testing.T) {
+	tests := []struct {
+		desc             string
+		statusCode       int
+		patch            []byte
+		lastKnownVersion int64
+		resp             []byte
+		wantVersion      int64
+		wantErr          error
+	}{
+		{
+			desc:       "patch topology succeed",
+			statusCode: http.StatusOK,
+			patch: []byte(`{
+				"services": {
+					"service-1@ns": null,
+					"service-2@ns": {
+						"externalPorts": [8080]
+					}
+				}
+			}`),
+			lastKnownVersion: 1,
+			resp:             []byte(`{"version": 2}`),
+			wantVersion:      2,
+		},
+		{
+			desc:             "patch conflict",
+			statusCode:       http.StatusConflict,
+			patch:            []byte(`{"services": {"service-1@ns": null}}`),
+			lastKnownVersion: 1,
+			wantErr: &APIError{
+				StatusCode: http.StatusConflict,
+				Message:    "error",
+			},
+		},
+		{
+			desc:       "patch topology unexpected error",
+			statusCode: http.StatusInternalServerError,
+			wantErr: &APIError{
+				StatusCode: http.StatusInternalServerError,
+				Message:    "error",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			var callCount int
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/topology", func(rw http.ResponseWriter, req *http.Request) {
+				callCount++
+
+				if req.Method != http.MethodPatch {
+					http.Error(rw, fmt.Sprintf("unsupported method: %s", req.Method), http.StatusMethodNotAllowed)
+					return
+				}
+
+				if req.Header.Get("Authorization") != "Bearer 456" {
+					http.Error(rw, "Invalid token", http.StatusUnauthorized)
+					return
+				}
+				if req.Header.Get("Content-Type") != "application/merge-patch+json" {
+					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
+					return
+				}
+				if req.Header.Get("Last-Known-Version") != strconv.FormatInt(test.lastKnownVersion, 10) {
+					http.Error(rw, "Invalid Content-Type", http.StatusBadRequest)
+					return
+				}
+				if req.Header.Get("Content-Encoding") != "gzip" {
+					http.Error(rw, "Invalid Content-Encoding", http.StatusBadRequest)
+					return
+				}
+
+				reader, err := gzip.NewReader(req.Body)
+				if err != nil {
+					http.Error(rw, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer func() { _ = reader.Close() }()
+
+				body, err := io.ReadAll(reader)
+				if err != nil {
+					http.Error(rw, err.Error(), http.StatusInternalServerError)
+					return
+				}
+
+				if !bytes.Equal(test.patch, body) {
+					http.Error(rw, "invalid patch", http.StatusBadRequest)
+					return
+				}
+
+				rw.WriteHeader(test.statusCode)
+
+				switch test.statusCode {
+				case http.StatusOK:
+					_, _ = rw.Write(test.resp)
+				default:
+					_ = json.NewEncoder(rw).Encode(APIError{Message: "error"})
+				}
+			})
+
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			c, err := NewClient(srv.URL, "456")
+			require.NoError(t, err)
+			c.httpClient = srv.Client()
+
+			gotVersion, err := c.PatchTopology(context.Background(), test.patch, test.lastKnownVersion)
+			if test.wantErr != nil {
+				require.ErrorAs(t, err, test.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, 1, callCount)
+			assert.EqualValues(t, test.wantVersion, gotVersion)
 		})
 	}
 }

@@ -37,16 +37,7 @@ func TestScraper_ScrapeTraefik(t *testing.T) {
 	s := metrics.NewScraper(http.DefaultClient)
 
 	got, err := s.Scrape(context.Background(), metrics.ParserTraefik, srvURL, metrics.ScrapeState{
-		Ingresses:        map[string]struct{}{"myIngress@default.ingress.networking.k8s.io": {}, "app-obe@whoami.ingress.networking.k8s.io": {}},
-		IngressRoutes:    map[string]struct{}{"myIngressRoute@default.ingressroute.traefik.containo.us": {}, "app-traefik@whoami.ingressroute.traefik.containo.us": {}},
-		ServiceIngresses: map[string][]string{"whoami@default": {"myIngress@default.ingress.networking.k8s.io"}, "whoami2@default": {"myIngress@default.ingress.networking.k8s.io"}},
-		TraefikServiceNames: map[string]string{
-			"default-whoami-80":         "whoami@default",
-			"default-whoami2-80":        "whoami2@default",
-			"default-whoami-sdfsdfsdsd": "whoami@default",
-			"default-whoami3-80":        "whoami3@default",
-			"whoami-app-traefik":        "whoami@whoami",
-		},
+		Ingresses: map[string]struct{}{"myIngress@default.ingress.networking.k8s.io": {}, "app-obe@whoami.ingress.networking.k8s.io": {}},
 	})
 	require.NoError(t, err)
 

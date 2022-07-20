@@ -19,6 +19,7 @@ package platform
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -35,6 +37,8 @@ import (
 	hubv1alpha1 "github.com/traefik/hub-agent-kubernetes/pkg/crd/api/hub/v1alpha1"
 	"github.com/traefik/hub-agent-kubernetes/pkg/edgeingress"
 	"github.com/traefik/hub-agent-kubernetes/pkg/logger"
+	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
+	"github.com/traefik/hub-agent-kubernetes/pkg/version"
 )
 
 // APIError represents an error returned by the API.
@@ -61,20 +65,21 @@ func NewClient(baseURL, token string) (*Client, error) {
 		return nil, fmt.Errorf("parse client url: %w", err)
 	}
 
-	rc := retryablehttp.NewClient()
-	rc.RetryMax = 4
-	rc.Logger = logger.NewWrappedLogger(log.Logger.With().Str("component", "platform_client").Logger())
+	client := retryablehttp.NewClient()
+	client.RetryMax = 4
+	client.Logger = logger.NewWrappedLogger(log.Logger.With().Str("component", "platform_client").Logger())
 
 	return &Client{
 		baseURL:    u,
 		token:      token,
-		httpClient: rc.StandardClient(),
+		httpClient: client.StandardClient(),
 	}, nil
 }
 
 type linkClusterReq struct {
 	KubeID   string `json:"kubeId"`
 	Platform string `json:"platform"`
+	Version  string `json:"version"`
 }
 
 type linkClusterResp struct {
@@ -83,7 +88,7 @@ type linkClusterResp struct {
 
 // Link links the agent to the given Kubernetes ID.
 func (c *Client) Link(ctx context.Context, kubeID string) (string, error) {
-	body, err := json.Marshal(linkClusterReq{KubeID: kubeID, Platform: "kubernetes"})
+	body, err := json.Marshal(linkClusterReq{KubeID: kubeID, Platform: "kubernetes", Version: version.Version()})
 	if err != nil {
 		return "", fmt.Errorf("marshal link agent request: %w", err)
 	}
@@ -129,15 +134,7 @@ func (c *Client) Link(ctx context.Context, kubeID string) (string, error) {
 
 // Config holds the configuration of the offer.
 type Config struct {
-	Topology TopologyConfig `json:"topology"`
-	Metrics  MetricsConfig  `json:"metrics"`
-}
-
-// TopologyConfig holds the topology part of the offer config.
-type TopologyConfig struct {
-	GitProxyHost string `json:"gitProxyHost,omitempty"`
-	GitOrgName   string `json:"gitOrgName,omitempty"`
-	GitRepoName  string `json:"gitRepoName,omitempty"`
+	Metrics MetricsConfig `json:"metrics"`
 }
 
 // MetricsConfig holds the metrics part of the offer config.
@@ -715,4 +712,141 @@ func (c *Client) GetCertificateByDomains(ctx context.Context, domains []string) 
 	}
 
 	return cert, nil
+}
+
+type fetchResp struct {
+	Version  int64         `json:"version"`
+	Topology state.Cluster `json:"topology"`
+}
+
+// FetchTopology fetches the topology.
+func (c *Client) FetchTopology(ctx context.Context) (topology state.Cluster, topoVersion int64, err error) {
+	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "topology"))
+	if err != nil {
+		return state.Cluster{}, 0, fmt.Errorf("parse endpoint: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL.String(), http.NoBody)
+	if err != nil {
+		return state.Cluster{}, 0, fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return state.Cluster{}, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := ungzipBody(resp)
+	if err != nil {
+		return state.Cluster{}, 0, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		apiErr := APIError{StatusCode: resp.StatusCode}
+		if err = json.Unmarshal(body, &apiErr); err != nil {
+			apiErr.Message = string(body)
+		}
+
+		return state.Cluster{}, 0, apiErr
+	}
+
+	var r fetchResp
+	if err = json.Unmarshal(body, &r); err != nil {
+		return state.Cluster{}, 0, fmt.Errorf("decode topology: %w", err)
+	}
+
+	return r.Topology, r.Version, nil
+}
+
+type patchResp struct {
+	Version int64 `json:"version"`
+}
+
+// PatchTopology submits a JSON Merge Patch to the platform containing the difference in the topology since
+// its last synchronization. The last known topology version must be provided. This version can be obtained
+// by calling the FetchTopology method.
+func (c *Client) PatchTopology(ctx context.Context, patch []byte, lastKnownVersion int64) (int64, error) {
+	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "topology"))
+	if err != nil {
+		return 0, fmt.Errorf("parse endpoint: %w", err)
+	}
+
+	req, err := newGzippedRequestWithContext(ctx, http.MethodPatch, baseURL.String(), patch)
+	if err != nil {
+		return 0, fmt.Errorf("build request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/merge-patch+json")
+	req.Header.Set("Last-Known-Version", strconv.FormatInt(lastKnownVersion, 10))
+
+	// This operation cannot be retried without calling FetchTopology in between.
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		all, _ := io.ReadAll(resp.Body)
+
+		apiErr := APIError{StatusCode: resp.StatusCode}
+		if err = json.Unmarshal(all, &apiErr); err != nil {
+			apiErr.Message = string(all)
+		}
+
+		return 0, apiErr
+	}
+
+	var body patchResp
+	if err = json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decode topology: %w", err)
+	}
+
+	return body.Version, nil
+}
+
+func newGzippedRequestWithContext(ctx context.Context, verb, u string, body []byte) (*http.Request, error) {
+	var compressedBody bytes.Buffer
+
+	writer := gzip.NewWriter(&compressedBody)
+	_, err := writer.Write(body)
+	if err != nil {
+		return nil, fmt.Errorf("gzip write: %w", err)
+	}
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("gzip close: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, verb, u, &compressedBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Encoding", "gzip")
+
+	return req, nil
+}
+
+func ungzipBody(resp *http.Response) ([]byte, error) {
+	contentEncoding := resp.Header.Get("Content-Encoding")
+
+	switch contentEncoding {
+	case "gzip":
+		reader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("create gzip reader: %w", err)
+		}
+		defer func() { _ = reader.Close() }()
+
+		return io.ReadAll(reader)
+	case "":
+		return io.ReadAll(resp.Body)
+	default:
+		return nil, fmt.Errorf("unsupported content encoding %q", contentEncoding)
+	}
 }
