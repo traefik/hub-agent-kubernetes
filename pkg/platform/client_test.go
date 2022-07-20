@@ -90,7 +90,7 @@ func TestClient_Link(t *testing.T) {
 					return
 				}
 
-				if !bytes.Equal([]byte(`{"kubeId":"1","platform":"kubernetes"}`), b) {
+				if !bytes.Equal([]byte(`{"kubeId":"1","platform":"kubernetes","version":"dev"}`), b) {
 					http.Error(rw, fmt.Sprintf("invalid body: %s", string(b)), http.StatusBadRequest)
 					return
 				}

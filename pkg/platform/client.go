@@ -38,6 +38,7 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/edgeingress"
 	"github.com/traefik/hub-agent-kubernetes/pkg/logger"
 	"github.com/traefik/hub-agent-kubernetes/pkg/topology/state"
+	"github.com/traefik/hub-agent-kubernetes/pkg/version"
 )
 
 // APIError represents an error returned by the API.
@@ -78,6 +79,7 @@ func NewClient(baseURL, token string) (*Client, error) {
 type linkClusterReq struct {
 	KubeID   string `json:"kubeId"`
 	Platform string `json:"platform"`
+	Version  string `json:"version"`
 }
 
 type linkClusterResp struct {
@@ -86,7 +88,7 @@ type linkClusterResp struct {
 
 // Link links the agent to the given Kubernetes ID.
 func (c *Client) Link(ctx context.Context, kubeID string) (string, error) {
-	body, err := json.Marshal(linkClusterReq{KubeID: kubeID, Platform: "kubernetes"})
+	body, err := json.Marshal(linkClusterReq{KubeID: kubeID, Platform: "kubernetes", Version: version.Version()})
 	if err != nil {
 		return "", fmt.Errorf("marshal link agent request: %w", err)
 	}
@@ -673,7 +675,7 @@ type fetchResp struct {
 }
 
 // FetchTopology fetches the topology.
-func (c *Client) FetchTopology(ctx context.Context) (topology state.Cluster, version int64, err error) {
+func (c *Client) FetchTopology(ctx context.Context) (topology state.Cluster, topoVersion int64, err error) {
 	baseURL, err := c.baseURL.Parse(path.Join(c.baseURL.Path, "topology"))
 	if err != nil {
 		return state.Cluster{}, 0, fmt.Errorf("parse endpoint: %w", err)
