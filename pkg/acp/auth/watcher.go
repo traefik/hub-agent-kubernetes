@@ -29,6 +29,7 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp"
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/basicauth"
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/jwt"
+	"github.com/traefik/hub-agent-kubernetes/pkg/acp/oidc"
 	hubv1alpha1 "github.com/traefik/hub-agent-kubernetes/pkg/crd/api/hub/v1alpha1"
 )
 
@@ -82,7 +83,7 @@ func (w *Watcher) Run(ctx context.Context) {
 
 			log.Debug().Msg("Refreshing ACP handlers")
 
-			routes, err := buildRoutes(cfgs)
+			routes, err := buildRoutes(ctx, cfgs)
 			if err != nil {
 				log.Error().Err(err).Msg("Unable to switch ACP handlers")
 				continue
@@ -161,7 +162,7 @@ func (w *Watcher) OnDelete(obj interface{}) {
 	}
 }
 
-func buildRoutes(cfgs map[string]*acp.Config) (http.Handler, error) {
+func buildRoutes(ctx context.Context, cfgs map[string]*acp.Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	for name, cfg := range cfgs {
@@ -173,9 +174,7 @@ func buildRoutes(cfgs map[string]*acp.Config) (http.Handler, error) {
 			}
 
 			path := "/" + name
-
 			log.Debug().Str("acp_name", name).Str("path", path).Msg("Registering JWT ACP handler")
-
 			mux.Handle(path, jwtHandler)
 
 		case cfg.BasicAuth != nil:
@@ -183,8 +182,19 @@ func buildRoutes(cfgs map[string]*acp.Config) (http.Handler, error) {
 			if err != nil {
 				return nil, fmt.Errorf("create %q basic auth ACP handler: %w", name, err)
 			}
+
 			path := "/" + name
 			log.Debug().Str("acp_name", name).Str("path", path).Msg("Registering basic auth ACP handler")
+			mux.Handle(path, h)
+
+		case cfg.OIDC != nil:
+			h, err := oidc.NewHandler(ctx, cfg.OIDC, name)
+			if err != nil {
+				return nil, fmt.Errorf("create %q OIDC ACP handler: %w", name, err)
+			}
+
+			path := "/" + name
+			log.Debug().Str("acp_name", name).Str("path", path).Msg("Registering OIDC auth ACP handler")
 			mux.Handle(path, h)
 
 		default:

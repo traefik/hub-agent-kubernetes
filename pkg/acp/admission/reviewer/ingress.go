@@ -102,6 +102,12 @@ func headerToForward(cfg *acp.Config) ([]string, error) {
 		if cfg.BasicAuth.StripAuthorizationHeader {
 			headerToFwd = append(headerToFwd, "Authorization")
 		}
+	case cfg.OIDC != nil:
+		for headerName := range cfg.OIDC.ForwardHeaders {
+			headerToFwd = append(headerToFwd, headerName)
+		}
+		headerToFwd = append(headerToFwd, "Set-Cookie")
+
 	default:
 		return nil, errors.New("unsupported ACP type")
 	}

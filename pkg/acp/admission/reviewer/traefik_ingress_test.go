@@ -29,6 +29,7 @@ import (
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/admission/ingclass"
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/basicauth"
 	"github.com/traefik/hub-agent-kubernetes/pkg/acp/jwt"
+	"github.com/traefik/hub-agent-kubernetes/pkg/acp/oidc"
 	traefikv1alpha1 "github.com/traefik/hub-agent-kubernetes/pkg/crd/api/traefik/v1alpha1"
 	traefikkubemock "github.com/traefik/hub-agent-kubernetes/pkg/crd/generated/client/traefik/clientset/versioned/fake"
 	admv1 "k8s.io/api/admission/v1"
@@ -359,6 +360,26 @@ func TestTraefikIngress_ReviewAddsAuthentication(t *testing.T) {
 				"traefik.ingress.kubernetes.io/router.middlewares": "custom-middleware@kubernetescrd,test-zz-my-policy-test@kubernetescrd",
 			},
 			wantAuthResponseHeaders: []string{"User", "Authorization"},
+		},
+		{
+			desc: "add OIDC authentication",
+			config: &acp.Config{OIDC: &oidc.Config{
+				ForwardHeaders: map[string]string{
+					"fwdHeader": "claim",
+				},
+			}},
+			oldIngAnno: map[string]string{},
+			ingAnno: map[string]string{
+				AnnotationHubAuth:   "my-policy@test",
+				"custom-annotation": "foobar",
+				"traefik.ingress.kubernetes.io/router.middlewares": "custom-middleware@kubernetescrd",
+			},
+			wantPatch: map[string]string{
+				AnnotationHubAuth:   "my-policy@test",
+				"custom-annotation": "foobar",
+				"traefik.ingress.kubernetes.io/router.middlewares": "custom-middleware@kubernetescrd,test-zz-my-policy-test@kubernetescrd",
+			},
+			wantAuthResponseHeaders: []string{"fwdHeader", "Set-Cookie"},
 		},
 	}
 

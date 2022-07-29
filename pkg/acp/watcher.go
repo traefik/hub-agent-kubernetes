@@ -189,6 +189,39 @@ func needUpdate(a ACP, policy *hubv1alpha1.AccessControlPolicy) bool {
 func buildAccessControlPolicySpec(a ACP) hubv1alpha1.AccessControlPolicySpec {
 	spec := hubv1alpha1.AccessControlPolicySpec{}
 	switch {
+	case a.OIDC != nil:
+		spec.OIDC = &hubv1alpha1.AccessControlOIDC{
+			Issuer:       a.OIDC.Issuer,
+			ClientID:     a.OIDC.ClientID,
+			ClientSecret: a.OIDC.ClientSecret,
+			RedirectURL:  a.OIDC.RedirectURL,
+			LogoutURL:    a.OIDC.LogoutURL,
+			AuthParams:   a.OIDC.AuthParams,
+			StateCookie: hubv1alpha1.StateCookie{
+				Secret:   a.OIDC.StateCookie.Secret,
+				SameSite: a.OIDC.StateCookie.SameSite,
+				Secure:   a.OIDC.StateCookie.Secure,
+				Domain:   a.OIDC.StateCookie.Domain,
+				Path:     a.OIDC.StateCookie.Path,
+			},
+			Session: hubv1alpha1.Session{
+				Secret:   a.OIDC.Session.Secret,
+				SameSite: a.OIDC.Session.SameSite,
+				Secure:   a.OIDC.Session.Secure,
+				Domain:   a.OIDC.Session.Domain,
+				Path:     a.OIDC.Session.Path,
+				Refresh:  a.OIDC.Session.Refresh,
+			},
+			Scopes:         a.OIDC.Scopes,
+			ForwardHeaders: a.OIDC.ForwardHeaders,
+			Claims:         a.OIDC.Claims,
+		}
+		if a.OIDC.TLS != nil {
+			spec.OIDC.TLS = &hubv1alpha1.TLS{
+				CABundle:           a.OIDC.TLS.CABundle,
+				InsecureSkipVerify: a.OIDC.TLS.InsecureSkipVerify,
+			}
+		}
 	case a.JWT != nil:
 		spec.JWT = &hubv1alpha1.AccessControlPolicyJWT{
 			SigningSecret:              a.JWT.SigningSecret,
