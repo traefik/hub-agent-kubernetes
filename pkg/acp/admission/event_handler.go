@@ -99,6 +99,13 @@ func (w *EventHandler) OnDelete(obj interface{}) {
 
 func headersChanged(oldCfg, newCfg hubv1alpha1.AccessControlPolicySpec) bool {
 	switch {
+	case newCfg.OIDC != nil:
+		if oldCfg.OIDC == nil {
+			return true
+		}
+
+		return !reflect.DeepEqual(oldCfg.OIDC.ForwardHeaders, newCfg.OIDC.ForwardHeaders)
+
 	case newCfg.JWT != nil:
 		if oldCfg.JWT == nil {
 			return true

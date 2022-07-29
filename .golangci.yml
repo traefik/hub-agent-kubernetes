@@ -55,17 +55,17 @@ linters-settings:
         COMPANY: Traefik Labs
     template: |-
       Copyright (C) {{ YEAR }} {{ COMPANY }}
-      
+
       This program is free software: you can redistribute it and/or modify
       it under the terms of the GNU Affero General Public License as published
       by the Free Software Foundation, either version 3 of the License, or
       (at your option) any later version.
-      
+
       This program is distributed in the hope that it will be useful,
       but WITHOUT ANY WARRANTY; without even the implied warranty of
       MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
       GNU Affero General Public License for more details.
-      
+
       You should have received a copy of the GNU Affero General Public License
       along with this program. If not, see <https://www.gnu.org/licenses/>.
 
@@ -171,6 +171,7 @@ issues:
         - gochecknoinits
         - gochecknoglobals
         - maintidx
+        - nosnakecase
     - path: pkg/crd/api/.*
       linters:
         - tagliatelle
@@ -219,3 +220,21 @@ issues:
     - path: pkg/crd/api/hub/v1alpha1/edge_ingress.go
       linters:
         - gosec # sha1 is not used to encrypt data, no security issue
+    - text: "O_WRONLY|O_RDWR|O_CREATE|O_TRUNC|O_APPEND"
+      linters:
+        - nosnakecase
+    - path: pkg/acp/oidc/oidc.go
+      text: "Function 'ServeHTTP' has too many statements"
+      linters:
+        - funlen
+    # Reducing cyclomatic complexity would reduce readability.
+    - path: pkg/acp/oidc/oidc.go
+      text: "cyclomatic complexity 20 of func `(.*).ServeHTTP` is high"
+      linters:
+        - gocyclo
+    - path: pkg/acp/oidc/http.go
+      linters:
+        - gosec
+    - path: pkg/acp/oidc/oidc_test.go
+      linters:
+        - gosec

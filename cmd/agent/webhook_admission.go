@@ -129,9 +129,10 @@ func webhookAdmission(ctx context.Context, cliCtx *cli.Context, platformClient *
 	router.Handle("/acp", webAdmissionACP)
 
 	server := &http.Server{
-		Addr:     listenAddr,
-		Handler:  router,
-		ErrorLog: stdlog.New(log.Logger.Level(zerolog.DebugLevel), "", 0),
+		Addr:              listenAddr,
+		Handler:           router,
+		ErrorLog:          stdlog.New(log.Logger.Level(zerolog.DebugLevel), "", 0),
+		ReadHeaderTimeout: 2 * time.Second,
 	}
 	srvDone := make(chan struct{})
 

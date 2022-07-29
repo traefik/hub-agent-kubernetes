@@ -110,9 +110,10 @@ func (c authServerCmd) run(cliCtx *cli.Context) error {
 	mux.Handle("/", switcher)
 
 	server := &http.Server{
-		Addr:     listenAddr,
-		Handler:  mux,
-		ErrorLog: stdlog.New(log.Logger.Level(zerolog.DebugLevel), "", 0),
+		Addr:              listenAddr,
+		Handler:           mux,
+		ErrorLog:          stdlog.New(log.Logger.Level(zerolog.DebugLevel), "", 0),
+		ReadHeaderTimeout: 2 * time.Second,
 	}
 
 	srvDone := make(chan struct{})
